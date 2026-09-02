@@ -5,13 +5,6 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 ENV_FILE="$ROOT_DIR/.env"
 ENV_EXAMPLE="$ROOT_DIR/.env.example"
 
-if [[ -f "$ENV_FILE" ]]; then
-  # shellcheck source=/dev/null
-  set -a
-  source "$ENV_FILE"
-  set +a
-fi
-
 require_cmd() {
   command -v "$1" >/dev/null 2>&1 || {
     echo "Missing required command: $1" >&2
@@ -104,6 +97,27 @@ set_env_var() {
   mv "$tmp" "$ENV_FILE"
 }
 
+get_env_var() {
+  local key="$1"
+  local line value
+
+  if [[ ! -f "$ENV_FILE" ]]; then
+    return 0
+  fi
+
+  line="$(grep -E "^${key}=" "$ENV_FILE" | tail -n 1 || true)"
+  if [[ -z "$line" ]]; then
+    return 0
+  fi
+
+  value="${line#*=}"
+  if [[ "${value:0:1}" == '"' && "${value: -1}" == '"' ]]; then
+    value="${value:1:${#value}-2}"
+  fi
+
+  printf '%s' "$value"
+}
+
 is_valid_fqdn() {
   local host="$1"
   if [[ "$host" == "localhost" ]]; then
@@ -119,8 +133,11 @@ is_valid_fqdn() {
 }
 
 prompt_for_domain_and_acme() {
-  local fqdn="${PUBLIC_DOMAIN:-}"
-  local email="${ACME_EMAIL:-}"
+  local fqdn
+  local email
+
+  fqdn="$(get_env_var "PUBLIC_DOMAIN")"
+  email="$(get_env_var "ACME_EMAIL")"
 
   while ! is_valid_fqdn "$fqdn"; do
     read -r -p "[install] Enter the public FQDN for this site (example: erp.arkive.com): " fqdn
@@ -144,10 +161,8 @@ prompt_for_domain_and_acme() {
   set_env_var "NEXT_PUBLIC_API_BASE_URL" "https://$fqdn/api/v1"
   set_env_var "ENTRA_REDIRECT_URI" "https://$fqdn/api/v1/auth/callback"
 
-  # shellcheck source=/dev/null
-  set -a
-  source "$ENV_FILE"
-  set +a
+  PUBLIC_DOMAIN="$fqdn"
+  ACME_EMAIL="$email"
 
   echo "[install] configured PUBLIC_DOMAIN=$PUBLIC_DOMAIN"
 }
@@ -198,10 +213,6 @@ chmod 700 "$ROOT_DIR/data/backups"
 if [[ ! -f "$ENV_FILE" ]]; then
   cp "$ENV_EXAMPLE" "$ENV_FILE"
   echo "[install] created .env from template"
-  # shellcheck source=/dev/null
-  set -a
-  source "$ENV_FILE"
-  set +a
 fi
 
 prompt_for_domain_and_acme
