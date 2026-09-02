@@ -48,11 +48,11 @@ git fetch --tags
 git checkout --detach "$TAG"
 
 echo "Pending migrations (if any):"
-docker compose run --rm api pnpm exec prisma migrate status || true
+docker compose run --rm api ./node_modules/.bin/prisma migrate status || true
 
 # Update only application-facing services; do not rerun full install behavior.
 docker compose up -d --no-deps --build api worker web caddy
-docker compose run --rm api pnpm prisma:migrate
+docker compose run --rm api ./node_modules/.bin/prisma migrate deploy
 
 scripts/health-check.sh
 

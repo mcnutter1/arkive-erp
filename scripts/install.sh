@@ -262,11 +262,11 @@ echo "[install] waiting for health checks"
 docker compose ps
 
 echo "[install] running migrations"
-docker compose run --rm api pnpm prisma:migrate
+docker compose run --rm api ./node_modules/.bin/prisma migrate deploy
 
 echo "[install] optional seed"
 if [[ "${SEED_ON_INSTALL:-false}" == "true" ]]; then
-  docker compose run --rm api pnpm prisma:seed
+  docker compose run --rm api ./node_modules/.bin/tsx prisma/seed.ts
 fi
 
 echo "[install] complete"
