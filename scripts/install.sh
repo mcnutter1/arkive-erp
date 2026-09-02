@@ -19,6 +19,77 @@ require_cmd() {
   }
 }
 
+run_as_root() {
+  if [[ "${EUID}" -eq 0 ]]; then
+    "$@"
+  else
+    require_cmd sudo
+    sudo "$@"
+  fi
+}
+
+ensure_ubuntu_runtime_deps() {
+  local need_apt=0
+
+  if ! command -v docker >/dev/null 2>&1; then
+    need_apt=1
+  fi
+
+  if ! command -v openssl >/dev/null 2>&1; then
+    need_apt=1
+  fi
+
+  if docker compose version >/dev/null 2>&1; then
+    :
+  else
+    need_apt=1
+  fi
+
+  if [[ "$need_apt" -eq 0 ]]; then
+    return 0
+  fi
+
+  echo "[install] installing missing system dependencies (docker, compose plugin, openssl)"
+
+  run_as_root env DEBIAN_FRONTEND=noninteractive apt-get update
+  run_as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    ca-certificates \
+    curl \
+    gnupg \
+    lsb-release \
+    openssl
+
+  run_as_root install -m 0755 -d /etc/apt/keyrings
+  if [[ ! -f /etc/apt/keyrings/docker.asc ]]; then
+    run_as_root bash -c "curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc"
+  fi
+  run_as_root chmod a+r /etc/apt/keyrings/docker.asc
+
+  local arch codename
+  arch="$(dpkg --print-architecture)"
+  codename="${VERSION_CODENAME:-}"
+  if [[ -z "$codename" ]]; then
+    codename="$(. /etc/os-release && echo "$VERSION_CODENAME")"
+  fi
+
+  run_as_root bash -c "echo 'deb [arch=${arch} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu ${codename} stable' > /etc/apt/sources.list.d/docker.list"
+
+  run_as_root env DEBIAN_FRONTEND=noninteractive apt-get update
+  run_as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    docker-ce \
+    docker-ce-cli \
+    containerd.io \
+    docker-buildx-plugin \
+    docker-compose-plugin
+
+  run_as_root systemctl enable --now docker
+
+  if [[ -n "${SUDO_USER:-}" ]]; then
+    run_as_root usermod -aG docker "$SUDO_USER" || true
+    echo "[install] added ${SUDO_USER} to docker group (log out/in to apply for non-sudo docker commands)"
+  fi
+}
+
 set_env_var() {
   local key="$1"
   local value="$2"
@@ -112,6 +183,7 @@ if [[ -f /etc/os-release ]]; then
   fi
 fi
 
+ensure_ubuntu_runtime_deps
 require_cmd docker
 require_cmd openssl
 

@@ -12,6 +12,7 @@
 1. Clone repository at approved release tag.
 2. Configure `.env` from `.env.example`.
 3. Run `scripts/install.sh`.
+	- If Docker, Docker Compose plugin, or OpenSSL are missing, the installer will install them on Ubuntu automatically.
 4. Complete Microsoft Entra app registration.
 5. Validate with `scripts/health-check.sh`.
 
