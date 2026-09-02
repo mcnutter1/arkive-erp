@@ -1,0 +1,928 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserStatus {
+  INVITED
+  ACTIVE
+  SUSPENDED
+  DEACTIVATED
+}
+
+enum RoleScope {
+  SYSTEM
+  ORGANIZATION
+}
+
+enum AuditResult {
+  SUCCESS
+  FAILURE
+}
+
+enum EngagementKind {
+  EMPLOYEE
+  CONTRACTOR
+  ADVISOR
+  DIRECTOR
+  INTERN
+  CONSULTANT
+  OTHER
+}
+
+enum EngagementStatus {
+  DRAFT
+  PREBOARDING
+  ACTIVE
+  PAUSED
+  OFFBOARDING
+  TERMINATED
+  ALUMNI
+}
+
+enum DocumentStatus {
+  DRAFT
+  ACTIVE
+  RETIRED
+  ARCHIVED
+}
+
+enum SignatureRequestStatus {
+  DRAFT
+  SENT
+  PARTIALLY_SIGNED
+  SIGNED
+  DECLINED
+  EXPIRED
+  CANCELED
+}
+
+enum SignatureParticipantStatus {
+  PENDING
+  VIEWED
+  SIGNED
+  DECLINED
+  EXPIRED
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  BLOCKED
+  DONE
+  CANCELED
+}
+
+enum NotificationStatus {
+  UNREAD
+  READ
+  ARCHIVED
+}
+
+enum EquityTransactionType {
+  ISSUE
+  GRANT
+  VEST
+  EXERCISE
+  CANCEL
+  TRANSFER
+  CONVERT
+  SPLIT
+  REVERSE
+  CORRECT
+}
+
+enum ApprovalStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+  CANCELED
+}
+
+enum ProvisioningJobStatus {
+  DRAFT
+  QUEUED
+  RUNNING
+  SUCCESS
+  FAILED
+  CANCELED
+}
+
+enum SharePermission {
+  READ
+  WRITE
+  APPROVE
+  SIGN
+}
+
+enum ExerciseRequestStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  DECLINED
+  COMPLETED
+  CANCELED
+}
+
+model Organization {
+  id          String      @id @default(uuid()) @db.Uuid
+  code        String      @unique
+  name        String
+  timezone    String      @default("UTC")
+  currency    String      @default("USD")
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  archivedAt  DateTime?
+
+  legalEntities   LegalEntity[]
+  people          Person[]
+  users           User[]
+  roles           Role[]
+  permissions     Permission[]
+  featureFlags    FeatureFlag[]
+  departments     Department[]
+  engagementTypes EngagementType[]
+  auditEvents     AuditEvent[]
+  engagements     Engagement[]
+  documents       Document[]
+  tasks           Task[]
+  notifications   Notification[]
+  securityClasses SecurityClass[]
+  equityPlans     EquityPlan[]
+  equityTxns      EquityTransaction[]
+  grants          GrantAward[]
+  vestingSchedules VestingSchedule[]
+  valuations      Valuation[]
+  fundraisingRounds FundraisingRound[]
+  approvalRequests ApprovalRequest[]
+  provisioningJobs M365ProvisioningJob[]
+  systemSettings   SystemSetting[]
+  oidcStates       OidcAuthState[]
+  authSessions     AuthSession[]
+  recordShares     RecordShare[]
+  exerciseRequests ExerciseRequest[]
+  terminationRecords TerminationRecord[]
+  fundraisingScenarios FundraisingScenario[]
+}
+
+model LegalEntity {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @db.Uuid
+  legalName      String
+  shortName      String?
+  jurisdiction   String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId])
+  @@unique([organizationId, legalName])
+}
+
+model Person {
+  id               String    @id @default(uuid()) @db.Uuid
+  organizationId   String    @db.Uuid
+  legalFirstName   String
+  legalLastName    String
+  preferredName    String?
+  primaryEmail     String?
+  businessEmail    String?
+  timezone         String    @default("UTC")
+  classification   String?
+  employmentStatus String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  archivedAt       DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  user         User?
+  managerOf    Engagement[] @relation("ManagerPerson")
+  engagements  Engagement[] @relation("EngagedPerson")
+  tasksOwned   Task[]       @relation("TaskAssignee")
+  tasksCreated Task[]       @relation("TaskCreator")
+  notifications Notification[]
+  signatureParticipants SignatureParticipant[]
+
+  @@index([organizationId])
+  @@index([primaryEmail])
+  @@index([businessEmail])
+}
+
+model User {
+  id               String      @id @default(uuid()) @db.Uuid
+  organizationId   String      @db.Uuid
+  personId         String?     @unique @db.Uuid
+  microsoftUserId  String?     @unique
+  email            String
+  status           UserStatus  @default(INVITED)
+  lastLoginAt      DateTime?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+  archivedAt       DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  person       Person?      @relation(fields: [personId], references: [id], onDelete: SetNull)
+  userRoles    UserRole[]
+  authSessions AuthSession[]
+
+  @@index([organizationId])
+  @@unique([organizationId, email])
+}
+
+model OidcAuthState {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  stateHash      String   @unique
+  nonceHash      String
+  returnTo       String?
+  expiresAt      DateTime
+  consumedAt     DateTime?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, expiresAt])
+}
+
+model AuthSession {
+  id               String    @id @default(uuid()) @db.Uuid
+  organizationId   String    @db.Uuid
+  userId           String    @db.Uuid
+  sessionTokenHash String    @unique
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  lastSeenAt       DateTime?
+  ipAddress        String?
+  userAgent        String?
+  createdAt        DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, userId])
+  @@index([expiresAt])
+}
+
+model RecordShare {
+  id             String            @id @default(uuid()) @db.Uuid
+  organizationId String            @db.Uuid
+  resourceType   String
+  resourceId     String
+  personId       String            @db.Uuid
+  permission     SharePermission
+  expiresAt      DateTime?
+  createdByUserId String?          @db.Uuid
+  createdAt      DateTime          @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  person       Person       @relation(fields: [personId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, resourceType, resourceId])
+  @@index([organizationId, personId, permission])
+}
+
+model Engagement {
+  id               String           @id @default(uuid()) @db.Uuid
+  organizationId   String           @db.Uuid
+  personId         String           @db.Uuid
+  legalEntityId    String?          @db.Uuid
+  managerPersonId  String?          @db.Uuid
+  kind             EngagementKind
+  status           EngagementStatus @default(DRAFT)
+  department       String?
+  title            String?
+  startDate        DateTime?
+  endDate          DateTime?
+  workLocation     String?
+  timezone         String?
+  compensationMeta Json?
+  equityEligible   Boolean          @default(false)
+  notes            String?
+  version          Int              @default(1)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  archivedAt       DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  person       Person       @relation("EngagedPerson", fields: [personId], references: [id], onDelete: Restrict)
+  legalEntity  LegalEntity? @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
+  manager      Person?      @relation("ManagerPerson", fields: [managerPersonId], references: [id], onDelete: SetNull)
+  documents    Document[]
+  tasks        Task[]
+  terminations TerminationRecord[]
+
+  @@index([organizationId, personId])
+  @@index([organizationId, status])
+}
+
+model Document {
+  id               String         @id @default(uuid()) @db.Uuid
+  organizationId   String         @db.Uuid
+  legalEntityId    String?        @db.Uuid
+  personId         String?        @db.Uuid
+  engagementId     String?        @db.Uuid
+  category         String
+  title            String
+  status           DocumentStatus @default(DRAFT)
+  retentionUntil   DateTime?
+  legalHold        Boolean        @default(false)
+  tags             String[]       @default([])
+  metadata         Json?
+  version          Int            @default(1)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  archivedAt       DateTime?
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  legalEntity  LegalEntity?  @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
+  person       Person?       @relation(fields: [personId], references: [id], onDelete: SetNull)
+  engagement   Engagement?   @relation(fields: [engagementId], references: [id], onDelete: SetNull)
+  versions     DocumentVersion[]
+  signatures   SignatureRequest[]
+
+  @@index([organizationId, status])
+  @@index([organizationId, category])
+}
+
+model DocumentVersion {
+  id               String   @id @default(uuid()) @db.Uuid
+  organizationId   String   @db.Uuid
+  documentId       String   @db.Uuid
+  versionNumber    Int
+  storageKey       String
+  sha256           String
+  mimeType         String
+  byteSize         Int
+  metadata         Json?
+  createdByUserId  String?  @db.Uuid
+  createdAt        DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  document     Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  signatureRequests SignatureRequest[]
+
+  @@unique([documentId, versionNumber])
+  @@index([organizationId, createdAt])
+}
+
+model SignatureRequest {
+  id                   String                 @id @default(uuid()) @db.Uuid
+  organizationId       String                 @db.Uuid
+  documentId           String                 @db.Uuid
+  documentVersionId    String                 @db.Uuid
+  title                String
+  status               SignatureRequestStatus @default(DRAFT)
+  signingOrderRequired Boolean                @default(true)
+  expiresAt            DateTime?
+  canceledReason       String?
+  createdByUserId      String?                @db.Uuid
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+
+  organization    Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  document        Document             @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  documentVersion DocumentVersion      @relation(fields: [documentVersionId], references: [id], onDelete: Restrict)
+  participants    SignatureParticipant[]
+  events          SignatureEvent[]
+
+  @@index([organizationId, status])
+  @@index([documentId])
+}
+
+model SignatureParticipant {
+  id                 String                      @id @default(uuid()) @db.Uuid
+  organizationId     String                      @db.Uuid
+  signatureRequestId String                      @db.Uuid
+  personId           String                      @db.Uuid
+  signingOrder       Int
+  role               String
+  status             SignatureParticipantStatus  @default(PENDING)
+  signedAt           DateTime?
+  declinedReason     String?
+  consentText        String?
+  ipAddress          String?
+  userAgent          String?
+  createdAt          DateTime                    @default(now())
+
+  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  signatureRequest SignatureRequest @relation(fields: [signatureRequestId], references: [id], onDelete: Cascade)
+  person          Person          @relation(fields: [personId], references: [id], onDelete: Restrict)
+
+  @@unique([signatureRequestId, signingOrder])
+  @@index([organizationId, personId])
+}
+
+model SignatureEvent {
+  id                 String   @id @default(uuid()) @db.Uuid
+  organizationId     String   @db.Uuid
+  signatureRequestId String   @db.Uuid
+  eventType          String
+  payload            Json?
+  createdAt          DateTime @default(now())
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  signatureRequest SignatureRequest @relation(fields: [signatureRequestId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+}
+
+model Task {
+  id               String      @id @default(uuid()) @db.Uuid
+  organizationId   String      @db.Uuid
+  personId         String?     @db.Uuid
+  engagementId     String?     @db.Uuid
+  assigneePersonId String?     @db.Uuid
+  createdByPersonId String?    @db.Uuid
+  title            String
+  description      String?
+  status           TaskStatus  @default(TODO)
+  dueAt            DateTime?
+  completedAt      DateTime?
+  metadata         Json?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+  archivedAt       DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  person       Person?      @relation(fields: [personId], references: [id], onDelete: SetNull)
+  engagement   Engagement?  @relation(fields: [engagementId], references: [id], onDelete: SetNull)
+  assignee     Person?      @relation("TaskAssignee", fields: [assigneePersonId], references: [id], onDelete: SetNull)
+  createdBy    Person?      @relation("TaskCreator", fields: [createdByPersonId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, status])
+  @@index([organizationId, dueAt])
+}
+
+model Notification {
+  id             String             @id @default(uuid()) @db.Uuid
+  organizationId String             @db.Uuid
+  personId       String             @db.Uuid
+  channel        String
+  subject        String
+  body           String
+  status         NotificationStatus @default(UNREAD)
+  sentAt         DateTime?
+  readAt         DateTime?
+  metadata       Json?
+  createdAt      DateTime           @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  person       Person       @relation(fields: [personId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, personId, status])
+}
+
+model SecurityClass {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  legalEntityId  String?  @db.Uuid
+  code           String
+  name           String
+  authorizedShares Decimal @db.Decimal(24, 6)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  legalEntity  LegalEntity? @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
+  equityPlans  EquityPlan[]
+  equityTxns   EquityTransaction[]
+
+  @@unique([organizationId, code])
+}
+
+model EquityPlan {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  legalEntityId  String?  @db.Uuid
+  securityClassId String? @db.Uuid
+  code           String
+  name           String
+  reservedShares Decimal  @db.Decimal(24, 6)
+  effectiveDate  DateTime?
+  expiryDate     DateTime?
+  status         String   @default("DRAFT")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization  Organization  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  legalEntity   LegalEntity?  @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
+  securityClass SecurityClass? @relation(fields: [securityClassId], references: [id], onDelete: SetNull)
+  grants        GrantAward[]
+  equityTxns    EquityTransaction[]
+
+  @@unique([organizationId, code])
+}
+
+model GrantAward {
+  id               String   @id @default(uuid()) @db.Uuid
+  organizationId   String   @db.Uuid
+  personId         String   @db.Uuid
+  planId           String?  @db.Uuid
+  valuationId      String?  @db.Uuid
+  awardType        String
+  quantity         Decimal  @db.Decimal(24, 6)
+  exercisePrice    Decimal? @db.Decimal(24, 6)
+  currency         String   @default("USD")
+  grantDate        DateTime?
+  expirationDate   DateTime?
+  status           String   @default("DRAFT")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  person       Person       @relation(fields: [personId], references: [id], onDelete: Restrict)
+  plan         EquityPlan?  @relation(fields: [planId], references: [id], onDelete: SetNull)
+  valuation    Valuation?   @relation(fields: [valuationId], references: [id], onDelete: SetNull)
+  vestingSchedules VestingSchedule[]
+  equityTxns   EquityTransaction[]
+  exerciseRequests ExerciseRequest[]
+  terminations TerminationRecord[]
+
+  @@index([organizationId, personId])
+}
+
+model VestingSchedule {
+  id               String   @id @default(uuid()) @db.Uuid
+  organizationId   String   @db.Uuid
+  grantId          String   @db.Uuid
+  templateCode     String?
+  startDate        DateTime
+  cliffMonths      Int      @default(0)
+  durationMonths   Int
+  intervalMonths   Int      @default(1)
+  accelerationMeta Json?
+  paused           Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  grant        GrantAward   @relation(fields: [grantId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, startDate])
+}
+
+model EquityTransaction {
+  id                     String                @id @default(uuid()) @db.Uuid
+  organizationId         String                @db.Uuid
+  legalEntityId          String?               @db.Uuid
+  securityClassId        String?               @db.Uuid
+  planId                 String?               @db.Uuid
+  grantId                String?               @db.Uuid
+  fromPersonId           String?               @db.Uuid
+  toPersonId             String?               @db.Uuid
+  type                   EquityTransactionType
+  effectiveAt            DateTime
+  quantity               Decimal               @db.Decimal(24, 6)
+  unitPrice              Decimal?              @db.Decimal(24, 6)
+  currency               String                @default("USD")
+  ledgerSequence         BigInt
+  correctionOfTxnId      String?               @db.Uuid
+  reason                 String?
+  metadata               Json?
+  createdByUserId        String?               @db.Uuid
+  createdAt              DateTime              @default(now())
+
+  organization      Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  legalEntity       LegalEntity?      @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
+  securityClass     SecurityClass?    @relation(fields: [securityClassId], references: [id], onDelete: SetNull)
+  plan              EquityPlan?       @relation(fields: [planId], references: [id], onDelete: SetNull)
+  grant             GrantAward?       @relation(fields: [grantId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, ledgerSequence])
+  @@index([organizationId, effectiveAt])
+}
+
+model Valuation {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  legalEntityId  String?  @db.Uuid
+  valuationType  String
+  effectiveDate  DateTime
+  reviewDate     DateTime?
+  enterpriseValue Decimal? @db.Decimal(24, 6)
+  equityValue    Decimal? @db.Decimal(24, 6)
+  commonFmv      Decimal? @db.Decimal(24, 6)
+  currency       String   @default("USD")
+  status         String   @default("DRAFT")
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  legalEntity  LegalEntity? @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
+  grants       GrantAward[]
+
+  @@index([organizationId, effectiveDate])
+}
+
+model FundraisingRound {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  legalEntityId  String?  @db.Uuid
+  name           String
+  stage          String
+  status         String   @default("DRAFT")
+  closeDate      DateTime?
+  preMoney       Decimal? @db.Decimal(24, 6)
+  postMoney      Decimal? @db.Decimal(24, 6)
+  currency       String   @default("USD")
+  assumptions    Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  legalEntity  LegalEntity? @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
+  instruments  FinancingInstrument[]
+  scenarios    FundraisingScenario[]
+
+  @@index([organizationId, status])
+}
+
+model FinancingInstrument {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  roundId        String?  @db.Uuid
+  personId       String?  @db.Uuid
+  instrumentType String
+  principal      Decimal? @db.Decimal(24, 6)
+  interestRateBps Int?
+  valuationCap   Decimal? @db.Decimal(24, 6)
+  discountBps    Int?
+  maturityDate   DateTime?
+  metadata       Json?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  round        FundraisingRound? @relation(fields: [roundId], references: [id], onDelete: SetNull)
+  person       Person?            @relation(fields: [personId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, instrumentType])
+}
+
+model ApprovalRequest {
+  id             String         @id @default(uuid()) @db.Uuid
+  organizationId String         @db.Uuid
+  requestType    String
+  title          String
+  status         ApprovalStatus @default(DRAFT)
+  requiredCount  Int            @default(1)
+  submittedAt    DateTime?
+  finalizedAt    DateTime?
+  metadata       Json?
+  createdByUserId String?       @db.Uuid
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  decisions    ApprovalDecision[]
+
+  @@index([organizationId, status])
+}
+
+model ApprovalDecision {
+  id                String   @id @default(uuid()) @db.Uuid
+  organizationId    String   @db.Uuid
+  approvalRequestId String   @db.Uuid
+  approverPersonId  String?  @db.Uuid
+  decision          String
+  comment           String?
+  decidedAt         DateTime @default(now())
+
+  organization    Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  approvalRequest ApprovalRequest @relation(fields: [approvalRequestId], references: [id], onDelete: Cascade)
+  approver       Person?         @relation(fields: [approverPersonId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, approvalRequestId])
+}
+
+model M365ProvisioningJob {
+  id                String               @id @default(uuid()) @db.Uuid
+  organizationId    String               @db.Uuid
+  personId          String               @db.Uuid
+  engagementId      String?              @db.Uuid
+  operation         String
+  requestedUsername String?
+  requestedEmail    String?
+  payload           Json?
+  status            ProvisioningJobStatus @default(DRAFT)
+  attempts          Int                  @default(0)
+  lastError         String?
+  createdByUserId   String?              @db.Uuid
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  person       Person       @relation(fields: [personId], references: [id], onDelete: Restrict)
+  engagement   Engagement?  @relation(fields: [engagementId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, status])
+  @@index([organizationId, personId])
+}
+
+model SystemSetting {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  section        String
+  key            String
+  value          Json
+  updatedByUserId String? @db.Uuid
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, section, key])
+  @@index([organizationId, section])
+}
+
+model ExerciseRequest {
+  id             String                @id @default(uuid()) @db.Uuid
+  organizationId String                @db.Uuid
+  grantId        String                @db.Uuid
+  personId       String                @db.Uuid
+  quantity       Decimal               @db.Decimal(24, 6)
+  exercisePrice  Decimal?              @db.Decimal(24, 6)
+  currency       String                @default("USD")
+  status         ExerciseRequestStatus @default(DRAFT)
+  requestedAt    DateTime              @default(now())
+  approvedAt     DateTime?
+  completedAt    DateTime?
+  notes          String?
+  createdByUserId String?              @db.Uuid
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  grant        GrantAward    @relation(fields: [grantId], references: [id], onDelete: Restrict)
+  person       Person        @relation(fields: [personId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, personId, status])
+  @@index([organizationId, grantId])
+}
+
+model TerminationRecord {
+  id                  String   @id @default(uuid()) @db.Uuid
+  organizationId      String   @db.Uuid
+  engagementId        String?  @db.Uuid
+  grantId             String?  @db.Uuid
+  personId            String   @db.Uuid
+  terminatedAt        DateTime
+  vestedQuantityAtEnd Decimal? @db.Decimal(24, 6)
+  unvestedQuantityAtEnd Decimal? @db.Decimal(24, 6)
+  postTerminationExerciseBy DateTime?
+  overrideReason      String?
+  createdByUserId     String?  @db.Uuid
+  createdAt           DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  engagement   Engagement?  @relation(fields: [engagementId], references: [id], onDelete: SetNull)
+  grant        GrantAward?  @relation(fields: [grantId], references: [id], onDelete: SetNull)
+  person       Person       @relation(fields: [personId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, personId, terminatedAt])
+}
+
+model FundraisingScenario {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  roundId        String?  @db.Uuid
+  name           String
+  assumptions    Json
+  output         Json?
+  createdByUserId String? @db.Uuid
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  round        FundraisingRound? @relation(fields: [roundId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, roundId])
+}
+
+model Role {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  code           String
+  name           String
+  scope          RoleScope    @default(ORGANIZATION)
+  isSystem       Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  rolePermissions RolePermission[]
+  userRoles       UserRole[]
+
+  @@index([organizationId])
+  @@unique([organizationId, code])
+}
+
+model Permission {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  code           String
+  name           String
+  module         String
+  action         String
+  createdAt      DateTime @default(now())
+
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  rolePermissions RolePermission[]
+
+  @@index([organizationId])
+  @@unique([organizationId, code])
+}
+
+model RolePermission {
+  roleId       String   @db.Uuid
+  permissionId String   @db.Uuid
+  createdAt    DateTime @default(now())
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+}
+
+model UserRole {
+  userId      String    @db.Uuid
+  roleId      String    @db.Uuid
+  assignedBy  String?   @db.Uuid
+  assignedAt  DateTime  @default(now())
+  expiresAt   DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@index([expiresAt])
+}
+
+model AuditEvent {
+  id             String      @id @default(uuid()) @db.Uuid
+  organizationId String      @db.Uuid
+  actorUserId    String?     @db.Uuid
+  actorType      String
+  action         String
+  targetType     String
+  targetId       String?
+  result         AuditResult
+  requestId      String?
+  ipAddress      String?
+  userAgent      String?
+  beforeData     Json?
+  afterData      Json?
+  metadata       Json?
+  occurredAt     DateTime    @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, occurredAt])
+  @@index([targetType, targetId])
+}
+
+model FeatureFlag {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @db.Uuid
+  key            String
+  enabled        Boolean   @default(false)
+  description    String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, key])
+}
+
+model Department {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @db.Uuid
+  name           String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, name])
+}
+
+model EngagementType {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @db.Uuid
+  code           String
+  name           String
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, code])
+}
