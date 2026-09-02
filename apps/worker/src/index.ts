@@ -3,10 +3,10 @@ import { Redis } from 'ioredis';
 
 const redis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379');
 const queuePrefix = process.env.QUEUE_PREFIX ?? 'arkive';
-const systemQueueName = `${queuePrefix}:system`;
-const m365QueueName = `${queuePrefix}:m365`;
+const systemQueueName = 'system';
+const m365QueueName = 'm365';
 
-const systemQueue = new Queue(systemQueueName, { connection: redis });
+const systemQueue = new Queue(systemQueueName, { connection: redis, prefix: queuePrefix });
 
 const systemWorker = new Worker(
   systemQueueName,
@@ -16,7 +16,7 @@ const systemWorker = new Worker(
     }
     return { ignored: true };
   },
-  { connection: redis },
+  { connection: redis, prefix: queuePrefix },
 );
 
 const m365Worker = new Worker(
@@ -33,7 +33,7 @@ const m365Worker = new Worker(
       payload: job.data,
     };
   },
-  { connection: redis },
+  { connection: redis, prefix: queuePrefix },
 );
 
 systemWorker.on('ready', async () => {
