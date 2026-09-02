@@ -7,9 +7,9 @@ cd "$ROOT_DIR"
 docker compose ps
 
 echo "[health] api"
-docker compose exec -T api wget --spider -q http://localhost:4000/api/v1/health/liveness
+docker compose exec -T api node -e "fetch('http://localhost:4000/api/v1/health/liveness').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 echo "[health] web"
-docker compose exec -T web wget --spider -q http://localhost:3000
+docker compose exec -T web node -e "fetch('http://localhost:3000').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 echo "[health] done"
