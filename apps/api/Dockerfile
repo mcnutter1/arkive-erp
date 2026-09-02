@@ -9,10 +9,11 @@ COPY apps/api/prisma/schema.prisma apps/api/prisma/schema.prisma
 COPY packages/types/package.json packages/types/
 COPY packages/config/package.json packages/config/
 RUN pnpm install --filter @arkive/api... --frozen-lockfile=false
+RUN pnpm --filter @arkive/api prisma:generate
 
 FROM deps AS build
 COPY . .
-RUN pnpm --filter @arkive/api prisma:generate && pnpm --filter @arkive/api build
+RUN pnpm --filter @arkive/api build
 
 FROM node:22-alpine AS runtime
 WORKDIR /app/apps/api
