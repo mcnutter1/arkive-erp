@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import Decimal from 'decimal.js';
+import { Prisma } from '@prisma/client';
+import { Decimal } from 'decimal.js';
 
 import { AuthenticatedUser } from '../auth/auth.types.js';
 import { PrismaService } from '../common/prisma.service.js';
@@ -62,7 +63,7 @@ export class FundraisingService {
         organizationId: actor.organizationId,
         roundId,
         name: body.name,
-        assumptions: body.assumptions,
+        assumptions: body.assumptions as Prisma.InputJsonValue,
         createdByUserId: actor.id,
       },
     });

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import Decimal from 'decimal.js';
+import { Decimal } from 'decimal.js';
 
 import { AuthenticatedUser } from '../auth/auth.types.js';
 import { PrismaService } from '../common/prisma.service.js';
@@ -19,6 +19,7 @@ export class ReportsService {
     const [issuedTo, issuedFrom] = await this.prisma.$transaction([
       this.prisma.equityTransaction.groupBy({
         by: ['toPersonId'],
+        orderBy: { toPersonId: 'asc' },
         where: {
           organizationId: actor.organizationId,
           toPersonId: { not: null },
@@ -27,6 +28,7 @@ export class ReportsService {
       }),
       this.prisma.equityTransaction.groupBy({
         by: ['fromPersonId'],
+        orderBy: { fromPersonId: 'asc' },
         where: {
           organizationId: actor.organizationId,
           fromPersonId: { not: null },
@@ -38,7 +40,7 @@ export class ReportsService {
     const outgoingMap = new Map<string, Decimal>();
     for (const row of issuedFrom) {
       if (row.fromPersonId) {
-        outgoingMap.set(row.fromPersonId, row._sum.quantity ?? new Decimal(0));
+        outgoingMap.set(row.fromPersonId, row._sum?.quantity ?? new Decimal(0));
       }
     }
 
@@ -61,7 +63,7 @@ export class ReportsService {
     const holdings = issuedTo
       .filter((row) => row.toPersonId)
       .map((row) => {
-        const incoming = row._sum.quantity ?? new Decimal(0);
+        const incoming = row._sum?.quantity ?? new Decimal(0);
         const outgoing = outgoingMap.get(row.toPersonId as string) ?? new Decimal(0);
         return {
           personId: row.toPersonId as string,

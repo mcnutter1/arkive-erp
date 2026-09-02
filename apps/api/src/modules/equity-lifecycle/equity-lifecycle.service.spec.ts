@@ -1,5 +1,5 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import Decimal from 'decimal.js';
+import { Decimal } from 'decimal.js';
 import { describe, expect, it, vi } from 'vitest';
 
 import { EquityLifecycleService } from './equity-lifecycle.service.js';

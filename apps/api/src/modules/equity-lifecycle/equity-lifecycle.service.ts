@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import Decimal from 'decimal.js';
+import { Decimal } from 'decimal.js';
 
 import { AuthenticatedUser } from '../auth/auth.types.js';
 import { PrismaService } from '../common/prisma.service.js';
@@ -40,6 +40,9 @@ export class EquityLifecycleService {
       }
 
       const schedule = grant.vestingSchedules[0];
+      if (!schedule) {
+        throw new NotFoundException('Grant vesting schedule not found');
+      }
       const result = this.vestingService.calculate({
         totalQuantity: grant.quantity.toString(),
         startDate: schedule.startDate,
@@ -98,6 +101,11 @@ export class EquityLifecycleService {
       throw new NotFoundException('Grant or vesting schedule not found');
     }
 
+    const schedule = grant.vestingSchedules[0];
+    if (!schedule) {
+      throw new NotFoundException('Grant vesting schedule not found');
+    }
+
     const termination = await this.prisma.terminationRecord.findFirst({
       where: {
         organizationId: actor.organizationId,
@@ -111,7 +119,6 @@ export class EquityLifecycleService {
       throw new BadRequestException('Post-termination exercise window has expired');
     }
 
-    const schedule = grant.vestingSchedules[0];
     const vested = this.vestingService.calculate({
       totalQuantity: grant.quantity.toString(),
       startDate: schedule.startDate,
@@ -276,6 +283,9 @@ export class EquityLifecycleService {
     }
 
     const schedule = request.grant.vestingSchedules[0];
+    if (!schedule) {
+      throw new BadRequestException('Grant vesting schedule not found');
+    }
     const vested = this.vestingService.calculate({
       totalQuantity: request.grant.quantity.toString(),
       startDate: schedule.startDate,

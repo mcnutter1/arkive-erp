@@ -41,6 +41,9 @@ export class VestingController {
     }
 
     const schedule = grant.vestingSchedules[0];
+    if (!schedule) {
+      throw new BadRequestException('Grant vesting schedule not found');
+    }
     const asOfDate = asOf ? new Date(asOf) : new Date();
 
     return this.vestingService.calculate({

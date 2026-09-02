@@ -15,9 +15,10 @@ const EngagementStatusValues = {
   DRAFT: 'DRAFT',
   PREBOARDING: 'PREBOARDING',
   ACTIVE: 'ACTIVE',
-  LEAVE: 'LEAVE',
+  PAUSED: 'PAUSED',
+  OFFBOARDING: 'OFFBOARDING',
   TERMINATED: 'TERMINATED',
-  ENDED: 'ENDED',
+  ALUMNI: 'ALUMNI',
 } as const;
 
 type EngagementKind = (typeof EngagementKindValues)[keyof typeof EngagementKindValues];

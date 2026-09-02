@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 
 import { AuthenticatedUser } from '../auth/auth.types.js';
 import { PrismaService } from '../common/prisma.service.js';
@@ -28,14 +29,14 @@ export class AdminService {
         },
       },
       update: {
-        value: dto.value,
+        value: dto.value as Prisma.InputJsonValue,
         updatedByUserId: actor.id,
       },
       create: {
         organizationId: actor.organizationId,
         section: dto.section,
         key: dto.key,
-        value: dto.value,
+        value: dto.value as Prisma.InputJsonValue,
         updatedByUserId: actor.id,
       },
     });
