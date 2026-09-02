@@ -15,11 +15,12 @@ COPY . .
 RUN pnpm --filter @arkive/api prisma:generate && pnpm --filter @arkive/api build
 
 FROM node:22-alpine AS runtime
-WORKDIR /app
+WORKDIR /app/apps/api
 ENV NODE_ENV=production
 RUN corepack enable
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=build /app/apps/api/dist ./apps/api/dist
-COPY --from=build /app/apps/api/package.json ./apps/api/package.json
-COPY --from=build /app/apps/api/prisma ./apps/api/prisma
-CMD ["node", "apps/api/dist/src/main.js"]
+COPY --from=deps /app/node_modules /app/node_modules
+COPY --from=deps /app/apps/api/node_modules ./node_modules
+COPY --from=build /app/apps/api/dist ./dist
+COPY --from=build /app/apps/api/package.json ./package.json
+COPY --from=build /app/apps/api/prisma ./prisma
+CMD ["node", "dist/src/main.js"]
