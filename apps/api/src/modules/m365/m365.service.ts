@@ -11,7 +11,9 @@ export class M365Service {
   private readonly queue: Queue;
 
   constructor(private readonly prisma: PrismaService) {
-    const redis = new Redis(process.env.REDIS_URL ?? 'redis://redis:6379');
+    const redis = new Redis(process.env.REDIS_URL ?? 'redis://redis:6379', {
+      maxRetriesPerRequest: null,
+    });
     const queuePrefix = process.env.QUEUE_PREFIX ?? 'arkive';
     const queueName = 'm365';
     this.queue = new Queue(queueName, { connection: redis, prefix: queuePrefix });
