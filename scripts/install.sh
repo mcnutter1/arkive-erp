@@ -171,13 +171,28 @@ wait_for_letsencrypt_cert() {
   local domain="$1"
   local attempts=30
   local i=1
+  local issuer
 
   echo "[install] waiting for Let's Encrypt certificate issuance for $domain"
   while [[ "$i" -le "$attempts" ]]; do
-    if docker compose exec -T caddy sh -lc "find /data/caddy/certificates -type f -name '*.crt' | grep -E '/${domain}/' >/dev/null"; then
+    # Trigger a TLS handshake through Caddy with SNI so cert automation runs.
+    curl -ksS --resolve "${domain}:443:127.0.0.1" "https://${domain}/" >/dev/null || true
+
+    issuer="$({
+      echo | openssl s_client -servername "$domain" -connect 127.0.0.1:443 2>/dev/null \
+        | openssl x509 -noout -issuer 2>/dev/null;
+    } || true)"
+
+    if [[ "$issuer" == *"Let's Encrypt"* ]]; then
       echo "[install] Let's Encrypt certificate detected for $domain"
       return 0
     fi
+
+    if docker compose exec -T caddy sh -lc "[ -d /data/caddy/certificates ] && find /data/caddy/certificates -type f -name '*.crt' 2>/dev/null | grep -E '/${domain}/' >/dev/null"; then
+      echo "[install] certificate file detected for $domain (issuer pending verification)"
+      return 0
+    fi
+
     echo "[install] certificate not ready yet ($i/$attempts)"
     i=$((i + 1))
     sleep 5
