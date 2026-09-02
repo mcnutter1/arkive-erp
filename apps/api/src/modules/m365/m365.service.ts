@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Queue } from 'bullmq';
-import IORedis from 'ioredis';
+import { Redis } from 'ioredis';
 
 import { AuthenticatedUser } from '../auth/auth.types.js';
 import { PrismaService } from '../common/prisma.service.js';
@@ -11,7 +11,7 @@ export class M365Service {
   private readonly queue: Queue;
 
   constructor(private readonly prisma: PrismaService) {
-    const redis = new IORedis(process.env.REDIS_URL ?? 'redis://redis:6379');
+    const redis = new Redis(process.env.REDIS_URL ?? 'redis://redis:6379');
     const queueName = `${process.env.QUEUE_PREFIX ?? 'arkive'}:m365`;
     this.queue = new Queue(queueName, { connection: redis });
   }

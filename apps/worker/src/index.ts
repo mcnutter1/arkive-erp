@@ -1,7 +1,7 @@
 import { Queue, Worker } from 'bullmq';
-import IORedis from 'ioredis';
+import { Redis } from 'ioredis';
 
-const redis = new IORedis(process.env.REDIS_URL ?? 'redis://localhost:6379');
+const redis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379');
 const queuePrefix = process.env.QUEUE_PREFIX ?? 'arkive';
 const systemQueueName = `${queuePrefix}:system`;
 const m365QueueName = `${queuePrefix}:m365`;
