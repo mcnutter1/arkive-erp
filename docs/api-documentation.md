@@ -3,8 +3,8 @@
 - Base path: `/api/v1`
 - OpenAPI UI: `/docs`
 - Health endpoints:
-  - `/health/liveness`
-  - `/health/readiness`
+  - `/api/v1/health/liveness`
+  - `/api/v1/health/readiness`
 
 Implemented v1 endpoints:
 
