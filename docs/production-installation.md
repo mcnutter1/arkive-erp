@@ -16,6 +16,12 @@
 4. Complete Microsoft Entra app registration.
 5. Validate with `scripts/health-check.sh`.
 
+## Image pull troubleshooting
+
+- The stack uses public images from Docker Hub (`postgres`, `redis`, `caddy`, `minio/minio`).
+- If `docker compose pull` fails, fix registry/network access first and rerun install.
+- MinIO is configured on the `latest` channel in compose; pin to a validated release tag before formal production cutovers.
+
 ## Hardening checklist
 
 - Restrict SSH and use key-based auth

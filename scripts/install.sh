@@ -235,7 +235,10 @@ fi
 
 echo "[install] building and starting services"
 cd "$ROOT_DIR"
-docker compose pull || true
+if ! docker compose pull; then
+  echo "[install] image pull failed. Verify image tags and network access to container registries." >&2
+  exit 1
+fi
 docker compose up -d --build
 
 wait_for_letsencrypt_cert "$PUBLIC_DOMAIN"
