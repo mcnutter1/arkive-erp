@@ -150,6 +150,10 @@ model Organization {
   auditEvents     AuditEvent[]
   engagements     Engagement[]
   documents       Document[]
+  documentVersions DocumentVersion[]
+  signatureRequests SignatureRequest[]
+  signatureParticipants SignatureParticipant[]
+  signatureEvents SignatureEvent[]
   tasks           Task[]
   notifications   Notification[]
   securityClasses SecurityClass[]
@@ -159,7 +163,9 @@ model Organization {
   vestingSchedules VestingSchedule[]
   valuations      Valuation[]
   fundraisingRounds FundraisingRound[]
+  financingInstruments FinancingInstrument[]
   approvalRequests ApprovalRequest[]
+  approvalDecisions ApprovalDecision[]
   provisioningJobs M365ProvisioningJob[]
   systemSettings   SystemSetting[]
   oidcStates       OidcAuthState[]
@@ -180,6 +186,13 @@ model LegalEntity {
   updatedAt      DateTime  @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  engagements  Engagement[]
+  documents    Document[]
+  securityClasses SecurityClass[]
+  equityPlans  EquityPlan[]
+  equityTxns   EquityTransaction[]
+  valuations   Valuation[]
+  fundraisingRounds FundraisingRound[]
 
   @@index([organizationId])
   @@unique([organizationId, legalName])
@@ -204,10 +217,19 @@ model Person {
   user         User?
   managerOf    Engagement[] @relation("ManagerPerson")
   engagements  Engagement[] @relation("EngagedPerson")
+  recordShares RecordShare[]
+  documents    Document[]
+  tasks        Task[]       @relation("TaskSubjectPerson")
   tasksOwned   Task[]       @relation("TaskAssignee")
   tasksCreated Task[]       @relation("TaskCreator")
   notifications Notification[]
   signatureParticipants SignatureParticipant[]
+  grants       GrantAward[]
+  financingInstruments FinancingInstrument[]
+  approvalDecisions ApprovalDecision[]
+  provisioningJobs M365ProvisioningJob[]
+  exerciseRequests ExerciseRequest[]
+  terminationRecords TerminationRecord[]
 
   @@index([organizationId])
   @@index([primaryEmail])
@@ -316,6 +338,7 @@ model Engagement {
   documents    Document[]
   tasks        Task[]
   terminations TerminationRecord[]
+  provisioningJobs M365ProvisioningJob[]
 
   @@index([organizationId, personId])
   @@index([organizationId, status])
@@ -450,7 +473,7 @@ model Task {
   archivedAt       DateTime?
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  person       Person?      @relation(fields: [personId], references: [id], onDelete: SetNull)
+  person       Person?      @relation("TaskSubjectPerson", fields: [personId], references: [id], onDelete: SetNull)
   engagement   Engagement?  @relation(fields: [engagementId], references: [id], onDelete: SetNull)
   assignee     Person?      @relation("TaskAssignee", fields: [assigneePersonId], references: [id], onDelete: SetNull)
   createdBy    Person?      @relation("TaskCreator", fields: [createdByPersonId], references: [id], onDelete: SetNull)
