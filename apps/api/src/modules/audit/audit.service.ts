@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { AuditResult } from '@prisma/client';
 
 import { PrismaService } from '../common/prisma.service.js';
+
+type AuditResult = 'SUCCESS' | 'FAILURE';
 
 export type AuditWriteInput = {
   organizationId: string;

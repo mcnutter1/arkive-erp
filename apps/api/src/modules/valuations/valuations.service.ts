@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import Decimal from 'decimal.js';
 
 import { AuthenticatedUser } from '../auth/auth.types.js';
 import { PrismaService } from '../common/prisma.service.js';
@@ -22,8 +22,8 @@ export class ValuationsService {
         organizationId: actor.organizationId,
         valuationType: dto.valuationType,
         effectiveDate: new Date(dto.effectiveDate),
-        commonFmv: dto.commonFmv ? new Prisma.Decimal(dto.commonFmv) : undefined,
-        enterpriseValue: dto.enterpriseValue ? new Prisma.Decimal(dto.enterpriseValue) : undefined,
+        commonFmv: dto.commonFmv ? new Decimal(dto.commonFmv) : undefined,
+        enterpriseValue: dto.enterpriseValue ? new Decimal(dto.enterpriseValue) : undefined,
       },
     });
   }

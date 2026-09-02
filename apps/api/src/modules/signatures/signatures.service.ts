@@ -1,5 +1,20 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { SignatureParticipantStatus, SignatureRequestStatus } from '@prisma/client';
+
+const SignatureParticipantStatus = {
+  PENDING: 'PENDING',
+  VIEWED: 'VIEWED',
+  SIGNED: 'SIGNED',
+  DECLINED: 'DECLINED',
+} as const;
+
+const SignatureRequestStatus = {
+  DRAFT: 'DRAFT',
+  SENT: 'SENT',
+  PARTIALLY_SIGNED: 'PARTIALLY_SIGNED',
+  SIGNED: 'SIGNED',
+  DECLINED: 'DECLINED',
+  VOIDED: 'VOIDED',
+} as const;
 
 import { AuthenticatedUser } from '../auth/auth.types.js';
 import { AccessPolicyService } from '../authorization/access-policy.service.js';

@@ -1,6 +1,13 @@
 import { IsDateString, IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
 
-import { SharePermission } from '@prisma/client';
+const SharePermissionValues = {
+  READ: 'READ',
+  WRITE: 'WRITE',
+  APPROVE: 'APPROVE',
+  SIGN: 'SIGN',
+} as const;
+
+type SharePermission = (typeof SharePermissionValues)[keyof typeof SharePermissionValues];
 
 export class CreateRecordShareDto {
   @IsString()
@@ -12,7 +19,7 @@ export class CreateRecordShareDto {
   @IsUUID()
   personId!: string;
 
-  @IsEnum(SharePermission)
+  @IsEnum(SharePermissionValues)
   permission!: SharePermission;
 
   @IsOptional()

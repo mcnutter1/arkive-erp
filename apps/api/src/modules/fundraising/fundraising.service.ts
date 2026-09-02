@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import Decimal from 'decimal.js';
 
 import { AuthenticatedUser } from '../auth/auth.types.js';
 import { PrismaService } from '../common/prisma.service.js';
@@ -24,8 +24,8 @@ export class FundraisingService {
         name: dto.name,
         stage: dto.stage,
         status: dto.status ?? 'DRAFT',
-        preMoney: dto.preMoney ? new Prisma.Decimal(dto.preMoney) : undefined,
-        postMoney: dto.postMoney ? new Prisma.Decimal(dto.postMoney) : undefined,
+        preMoney: dto.preMoney ? new Decimal(dto.preMoney) : undefined,
+        postMoney: dto.postMoney ? new Decimal(dto.postMoney) : undefined,
       },
     });
   }

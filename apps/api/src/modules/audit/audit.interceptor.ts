@@ -4,7 +4,6 @@ import {
   Injectable,
   NestInterceptor,
 } from '@nestjs/common';
-import { AuditResult } from '@prisma/client';
 import { Observable, catchError, tap, throwError } from 'rxjs';
 
 import { AuthenticatedUser } from '../auth/auth.types.js';
@@ -48,7 +47,7 @@ export class AuditInterceptor implements NestInterceptor {
           action: `${req.method} ${req.url}`,
           targetType: context.getClass().name,
           targetId,
-          result: AuditResult.SUCCESS,
+          result: 'SUCCESS',
           requestId,
           ipAddress: req.ip,
           userAgent: req.headers['user-agent'],
@@ -62,7 +61,7 @@ export class AuditInterceptor implements NestInterceptor {
           action: `${req.method} ${req.url}`,
           targetType: context.getClass().name,
           targetId,
-          result: AuditResult.FAILURE,
+          result: 'FAILURE',
           requestId,
           ipAddress: req.ip,
           userAgent: req.headers['user-agent'],

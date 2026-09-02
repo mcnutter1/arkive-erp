@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import Decimal from 'decimal.js';
 
 import { AuthenticatedUser } from '../auth/auth.types.js';
 import { PrismaService } from '../common/prisma.service.js';
@@ -18,7 +18,7 @@ export class EquityService {
   }
 
   async createTransaction(actor: AuthenticatedUser, dto: CreateEquityTransactionDto) {
-    const quantity = new Prisma.Decimal(dto.quantity);
+    const quantity = new Decimal(dto.quantity);
     if (quantity.lte(0)) {
       throw new BadRequestException('Quantity must be positive');
     }
@@ -41,8 +41,8 @@ export class EquityService {
         _sum: { quantity: true },
       });
 
-      const outgoing = sent._sum.quantity ?? new Prisma.Decimal(0);
-      const incoming = received._sum.quantity ?? new Prisma.Decimal(0);
+      const outgoing = sent._sum.quantity ?? new Decimal(0);
+      const incoming = received._sum.quantity ?? new Decimal(0);
       const available = incoming.sub(outgoing);
 
       if (available.lt(quantity)) {
@@ -63,7 +63,7 @@ export class EquityService {
         type: dto.type,
         effectiveAt: new Date(dto.effectiveAt),
         quantity,
-        unitPrice: dto.unitPrice ? new Prisma.Decimal(dto.unitPrice) : undefined,
+        unitPrice: dto.unitPrice ? new Decimal(dto.unitPrice) : undefined,
         securityClassId: dto.securityClassId,
         fromPersonId: dto.fromPersonId,
         toPersonId: dto.toPersonId,

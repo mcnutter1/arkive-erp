@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import Decimal from 'decimal.js';
 
 import { AuthenticatedUser } from '../auth/auth.types.js';
 import { PrismaService } from '../common/prisma.service.js';
@@ -16,8 +16,8 @@ export class EquityLifecycleService {
   async recordTermination(actor: AuthenticatedUser, dto: RecordTerminationDto) {
     const terminatedAt = new Date(dto.terminatedAt);
 
-    let vestedQuantityAtEnd: Prisma.Decimal | null = null;
-    let unvestedQuantityAtEnd: Prisma.Decimal | null = null;
+    let vestedQuantityAtEnd: Decimal | null = null;
+    let unvestedQuantityAtEnd: Decimal | null = null;
     let postTerminationExerciseBy: Date | null = null;
 
     if (dto.grantId) {
@@ -50,8 +50,8 @@ export class EquityLifecycleService {
         paused: schedule.paused,
       });
 
-      vestedQuantityAtEnd = new Prisma.Decimal(result.vestedQuantity);
-      unvestedQuantityAtEnd = new Prisma.Decimal(result.unvestedQuantity);
+      vestedQuantityAtEnd = new Decimal(result.vestedQuantity);
+      unvestedQuantityAtEnd = new Decimal(result.unvestedQuantity);
 
       const pteMonths = Number(process.env.DEFAULT_PTE_MONTHS ?? '3');
       const d = new Date(terminatedAt);
@@ -76,7 +76,7 @@ export class EquityLifecycleService {
   }
 
   async createExerciseRequest(actor: AuthenticatedUser, dto: CreateExerciseRequestDto) {
-    const qty = new Prisma.Decimal(dto.quantity);
+    const qty = new Decimal(dto.quantity);
     if (qty.lte(0)) {
       throw new BadRequestException('Quantity must be positive');
     }
@@ -133,8 +133,8 @@ export class EquityLifecycleService {
       },
     });
 
-    const alreadyExercised = completed._sum.quantity ?? new Prisma.Decimal(0);
-    const vestedQty = new Prisma.Decimal(vested.vestedQuantity);
+    const alreadyExercised = completed._sum.quantity ?? new Decimal(0);
+    const vestedQty = new Decimal(vested.vestedQuantity);
     const exercisable = vestedQty.sub(alreadyExercised);
 
     if (exercisable.lt(qty)) {
@@ -297,8 +297,8 @@ export class EquityLifecycleService {
       },
     });
 
-    const vestedQty = new Prisma.Decimal(vested.vestedQuantity);
-    const completedQty = alreadyCompleted._sum.quantity ?? new Prisma.Decimal(0);
+    const vestedQty = new Decimal(vested.vestedQuantity);
+    const completedQty = alreadyCompleted._sum.quantity ?? new Decimal(0);
     const available = vestedQty.sub(completedQty);
     if (available.lt(request.quantity)) {
       throw new BadRequestException('Insufficient exercisable vested quantity at completion time');

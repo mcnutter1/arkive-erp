@@ -1,7 +1,27 @@
 import { Transform } from 'class-transformer';
 import { IsEmail, IsEnum, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
 
-import { EngagementKind, EngagementStatus } from '@prisma/client';
+const EngagementKindValues = {
+  EMPLOYEE: 'EMPLOYEE',
+  CONTRACTOR: 'CONTRACTOR',
+  ADVISOR: 'ADVISOR',
+  DIRECTOR: 'DIRECTOR',
+  INTERN: 'INTERN',
+  CONSULTANT: 'CONSULTANT',
+  OTHER: 'OTHER',
+} as const;
+
+const EngagementStatusValues = {
+  DRAFT: 'DRAFT',
+  PREBOARDING: 'PREBOARDING',
+  ACTIVE: 'ACTIVE',
+  LEAVE: 'LEAVE',
+  TERMINATED: 'TERMINATED',
+  ENDED: 'ENDED',
+} as const;
+
+type EngagementKind = (typeof EngagementKindValues)[keyof typeof EngagementKindValues];
+type EngagementStatus = (typeof EngagementStatusValues)[keyof typeof EngagementStatusValues];
 
 import { PaginationDto } from '../common/pagination.dto.js';
 
@@ -31,11 +51,11 @@ export class CreateEngagementDto {
   @IsUUID()
   personId!: string;
 
-  @IsEnum(EngagementKind)
+  @IsEnum(EngagementKindValues)
   kind!: EngagementKind;
 
   @IsOptional()
-  @IsEnum(EngagementStatus)
+  @IsEnum(EngagementStatusValues)
   status?: EngagementStatus;
 
   @IsOptional()

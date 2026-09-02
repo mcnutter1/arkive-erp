@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import Decimal from 'decimal.js';
 
 import { VestingInput, VestingResult } from './vesting.types.js';
 
@@ -23,7 +23,7 @@ function addMonthsClampedUtc(date: Date, months: number): Date {
 @Injectable()
 export class VestingService {
   calculate(input: VestingInput): VestingResult {
-    const total = new Prisma.Decimal(input.totalQuantity);
+    const total = new Decimal(input.totalQuantity);
     if (total.lte(0)) {
       return {
         vestedQuantity: '0',
@@ -66,8 +66,8 @@ export class VestingService {
 
     const vestedBase = total.mul(elapsedIntervals).div(totalIntervals);
     const acceleration = input.accelerationQuantity
-      ? new Prisma.Decimal(input.accelerationQuantity)
-      : new Prisma.Decimal(0);
+      ? new Decimal(input.accelerationQuantity)
+      : new Decimal(0);
 
     let vested = vestedBase.add(acceleration);
     if (vested.gt(total)) {

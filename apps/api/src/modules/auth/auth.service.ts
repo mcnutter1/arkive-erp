@@ -29,10 +29,11 @@ export class AuthService {
 
   private getTenantForOidc(): string {
     const allowedTenants = this.getAllowedTenants();
-    if (allowedTenants.length === 0) {
+    const tenant = allowedTenants[0];
+    if (!tenant) {
       throw new UnauthorizedException('No allowed Entra tenants configured');
     }
-    return allowedTenants[0];
+    return tenant;
   }
 
   private async loadAuthenticatedUserByUserId(userId: string): Promise<AuthenticatedUser> {

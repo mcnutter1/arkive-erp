@@ -1,5 +1,5 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import Decimal from 'decimal.js';
 import { describe, expect, it, vi } from 'vitest';
 
 import { EquityLifecycleService } from './equity-lifecycle.service.js';
@@ -58,12 +58,12 @@ describe('EquityLifecycleService', () => {
           organizationId: actor.organizationId,
           grantId: 'grant-1',
           personId: 'person-1',
-          quantity: new Prisma.Decimal('25'),
-          exercisePrice: new Prisma.Decimal('1.50'),
+          quantity: new Decimal('25'),
+          exercisePrice: new Decimal('1.50'),
           currency: 'USD',
           status: 'APPROVED',
           grant: {
-            quantity: new Prisma.Decimal('100'),
+            quantity: new Decimal('100'),
             vestingSchedules: [
               {
                 startDate: new Date('2025-01-01T00:00:00Z'),
@@ -75,7 +75,7 @@ describe('EquityLifecycleService', () => {
             ],
           },
         }),
-        aggregate: vi.fn().mockResolvedValue({ _sum: { quantity: new Prisma.Decimal('10') } }),
+        aggregate: vi.fn().mockResolvedValue({ _sum: { quantity: new Decimal('10') } }),
       },
       equityTransaction: {
         aggregate: vi.fn().mockResolvedValue({ _max: { ledgerSequence: 41n } }),
@@ -97,8 +97,11 @@ describe('EquityLifecycleService', () => {
     expect(result).toEqual({ id: 'er-2', status: 'COMPLETED' });
     expect(update).toHaveBeenCalledTimes(1);
     expect(createTxn).toHaveBeenCalledTimes(1);
-    expect(createTxn.mock.calls[0][0].data.type).toBe('EXERCISE');
-    expect(createTxn.mock.calls[0][0].data.metadata.exerciseRequestId).toBe('er-2');
+    const firstCreateCall = createTxn.mock.calls[0];
+    expect(firstCreateCall).toBeDefined();
+    const createData = firstCreateCall?.[0]?.data as { type: string; metadata?: { exerciseRequestId?: string } };
+    expect(createData.type).toBe('EXERCISE');
+    expect(createData.metadata?.exerciseRequestId).toBe('er-2');
   });
 
   it('throws when exercise request is missing', async () => {
@@ -123,12 +126,12 @@ describe('EquityLifecycleService', () => {
           organizationId: actor.organizationId,
           grantId: 'grant-1',
           personId: 'person-1',
-          quantity: new Prisma.Decimal('1'),
+          quantity: new Decimal('1'),
           exercisePrice: null,
           currency: 'USD',
           status: 'APPROVED',
           grant: {
-            quantity: new Prisma.Decimal('10'),
+            quantity: new Decimal('10'),
             vestingSchedules: [
               {
                 startDate: new Date('2025-01-01T00:00:00Z'),

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import Decimal from 'decimal.js';
 
 import { AuthenticatedUser } from '../auth/auth.types.js';
 import { PrismaService } from '../common/prisma.service.js';
@@ -35,10 +35,10 @@ export class ReportsService {
       }),
     ]);
 
-    const outgoingMap = new Map<string, Prisma.Decimal>();
+    const outgoingMap = new Map<string, Decimal>();
     for (const row of issuedFrom) {
       if (row.fromPersonId) {
-        outgoingMap.set(row.fromPersonId, row._sum.quantity ?? new Prisma.Decimal(0));
+        outgoingMap.set(row.fromPersonId, row._sum.quantity ?? new Decimal(0));
       }
     }
 
@@ -61,15 +61,15 @@ export class ReportsService {
     const holdings = issuedTo
       .filter((row) => row.toPersonId)
       .map((row) => {
-        const incoming = row._sum.quantity ?? new Prisma.Decimal(0);
-        const outgoing = outgoingMap.get(row.toPersonId as string) ?? new Prisma.Decimal(0);
+        const incoming = row._sum.quantity ?? new Decimal(0);
+        const outgoing = outgoingMap.get(row.toPersonId as string) ?? new Decimal(0);
         return {
           personId: row.toPersonId as string,
           personName: peopleMap.get(row.toPersonId as string) ?? 'Unknown',
           netQuantity: incoming.sub(outgoing).toString(),
         };
       })
-      .filter((h) => new Prisma.Decimal(h.netQuantity).gt(0));
+      .filter((h) => new Decimal(h.netQuantity).gt(0));
 
     return {
       generatedAt: new Date().toISOString(),
