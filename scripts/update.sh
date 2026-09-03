@@ -2,7 +2,6 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-LOCK_FILE="$ROOT_DIR/data/runtime/deploy.lock"
 
 cd "$ROOT_DIR"
 
@@ -18,6 +17,9 @@ if [[ -f "$ROOT_DIR/.env" ]]; then
   set +a
 fi
 
+DATA_ROOT="${ARKIVE_DATA_ROOT:-/opt/arkive}"
+LOCK_FILE="$DATA_ROOT/runtime/deploy.lock"
+
 if [[ -n "$(git status --porcelain)" && "${ALLOW_DIRTY_DEPLOY:-false}" != "true" ]]; then
   echo "Working tree has uncommitted changes. Set ALLOW_DIRTY_DEPLOY=true to override." >&2
   exit 1
@@ -30,7 +32,7 @@ if ! flock -n 9; then
   exit 1
 fi
 
-avail_kb=$(df -k "$ROOT_DIR" | awk 'NR==2 {print $4}')
+avail_kb=$(df -k "$DATA_ROOT" | awk 'NR==2 {print $4}')
 if [[ "${avail_kb:-0}" -lt 2097152 ]]; then
   echo "Insufficient disk space: need at least 2 GB free." >&2
   exit 1
@@ -63,5 +65,5 @@ docker compose run --rm api ./node_modules/.bin/prisma migrate deploy
 scripts/health-check.sh
 
 DEPLOY_SHA="$(git rev-parse --short HEAD)"
-echo "$BRANCH_NAME@$DEPLOY_SHA $(date -u +%FT%TZ) success" >> "$ROOT_DIR/data/runtime/deploy-history.log"
+echo "$BRANCH_NAME@$DEPLOY_SHA $(date -u +%FT%TZ) success" >> "$DATA_ROOT/runtime/deploy-history.log"
 echo "Update complete: $BRANCH_NAME@$DEPLOY_SHA"

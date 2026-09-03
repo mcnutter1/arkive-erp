@@ -2,9 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-BACKUP_DIR="$ROOT_DIR/data/backups"
 TS="$(date -u +%Y%m%dT%H%M%SZ)"
-TARGET="$BACKUP_DIR/arkive-$TS"
 
 if [[ -f "$ROOT_DIR/.env" ]]; then
   # shellcheck source=/dev/null
@@ -12,6 +10,10 @@ if [[ -f "$ROOT_DIR/.env" ]]; then
   source "$ROOT_DIR/.env"
   set +a
 fi
+
+DATA_ROOT="${ARKIVE_DATA_ROOT:-/opt/arkive}"
+BACKUP_DIR="$DATA_ROOT/backups"
+TARGET="$BACKUP_DIR/arkive-$TS"
 
 mkdir -p "$TARGET"
 chmod 700 "$BACKUP_DIR"

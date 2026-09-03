@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 ENV_FILE="$ROOT_DIR/.env"
 ENV_EXAMPLE="$ROOT_DIR/.env.example"
+DEFAULT_DATA_ROOT="/opt/arkive"
 
 require_cmd() {
   command -v "$1" >/dev/null 2>&1 || {
@@ -118,6 +119,16 @@ get_env_var() {
   printf '%s' "$value"
 }
 
+ensure_env_var() {
+  local key="$1"
+  local value="$2"
+  local current
+  current="$(get_env_var "$key")"
+  if [[ -z "$current" ]]; then
+    set_env_var "$key" "$value"
+  fi
+}
+
 is_valid_fqdn() {
   local host="$1"
   if [[ "$host" == "localhost" ]]; then
@@ -218,6 +229,13 @@ if [[ -f /etc/os-release ]]; then
   fi
 fi
 
+if [[ "$ROOT_DIR" != /opt/* && "${ALLOW_NON_OPT_INSTALL:-false}" != "true" ]]; then
+  echo "Production install path must be under /opt (current: $ROOT_DIR)." >&2
+  echo "Clone the repo under /opt (example: /opt/arkive-erp) and rerun install." >&2
+  echo "Set ALLOW_NON_OPT_INSTALL=true only if you intentionally need a non-/opt install." >&2
+  exit 1
+fi
+
 ensure_ubuntu_runtime_deps
 require_cmd docker
 require_cmd openssl
@@ -227,13 +245,21 @@ if ! docker compose version >/dev/null 2>&1; then
   exit 1
 fi
 
-mkdir -p "$ROOT_DIR/data/backups" "$ROOT_DIR/data/runtime"
-chmod 700 "$ROOT_DIR/data/backups"
-
 if [[ ! -f "$ENV_FILE" ]]; then
   cp "$ENV_EXAMPLE" "$ENV_FILE"
   echo "[install] created .env from template"
 fi
+
+ensure_env_var "COMPOSE_PROJECT_NAME" "arkive"
+ensure_env_var "ARKIVE_DATA_ROOT" "$DEFAULT_DATA_ROOT"
+
+ARKIVE_DATA_ROOT="$(get_env_var "ARKIVE_DATA_ROOT")"
+if [[ -z "$ARKIVE_DATA_ROOT" ]]; then
+  ARKIVE_DATA_ROOT="$DEFAULT_DATA_ROOT"
+fi
+
+run_as_root mkdir -p "$ARKIVE_DATA_ROOT/backups" "$ARKIVE_DATA_ROOT/runtime"
+run_as_root chmod 700 "$ARKIVE_DATA_ROOT/backups"
 
 prompt_for_domain_and_acme
 

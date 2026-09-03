@@ -10,6 +10,8 @@ scripts/update.sh
 
 The updater fetches from `origin` and fast-forwards the current branch to the latest remote commit. If HEAD is detached, it uses `UPDATE_BRANCH` (if set) or falls back to `origin/HEAD`.
 
+Operational runtime files are written under `ARKIVE_DATA_ROOT` (default `/opt/arkive`), including deploy locks, deploy history, and backups.
+
 Behavior:
 
 - Requires explicit tag
