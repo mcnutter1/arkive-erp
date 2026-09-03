@@ -4,6 +4,17 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 REPO_URL="${ARKIVE_GIT_REPO_URL:-https://github.com/mcnutter1/arkive-erp.git}"
 
+apply_database_schema() {
+  echo "Ensuring database schema..."
+
+  if [[ -d "$ROOT_DIR/apps/api/prisma/migrations" ]] && find "$ROOT_DIR/apps/api/prisma/migrations" -mindepth 1 -maxdepth 1 -type d | grep -q .; then
+    docker compose run --rm api ./node_modules/.bin/prisma migrate deploy
+  else
+    echo "No prisma migrations found; applying schema with prisma db push"
+    docker compose run --rm api ./node_modules/.bin/prisma db push --skip-generate
+  fi
+}
+
 cd "$ROOT_DIR"
 
 if [[ ! -f "$ROOT_DIR/.env" ]]; then
@@ -107,7 +118,7 @@ docker compose run --rm api ./node_modules/.bin/prisma migrate status || true
 
 # Update only application-facing services; do not rerun full install behavior.
 docker compose up -d --no-deps --build api worker web caddy
-docker compose run --rm api ./node_modules/.bin/prisma migrate deploy
+apply_database_schema
 
 scripts/health-check.sh
 

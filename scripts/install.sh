@@ -220,6 +220,17 @@ wait_for_letsencrypt_cert() {
   return 1
 }
 
+apply_database_schema() {
+  echo "[install] ensuring database schema"
+
+  if [[ -d "$ROOT_DIR/apps/api/prisma/migrations" ]] && find "$ROOT_DIR/apps/api/prisma/migrations" -mindepth 1 -maxdepth 1 -type d | grep -q .; then
+    docker compose run --rm api ./node_modules/.bin/prisma migrate deploy
+  else
+    echo "[install] no prisma migrations found; applying schema with prisma db push"
+    docker compose run --rm api ./node_modules/.bin/prisma db push --skip-generate
+  fi
+}
+
 echo "[install] validating host OS"
 if [[ -f /etc/os-release ]]; then
   # shellcheck source=/dev/null
@@ -310,8 +321,7 @@ wait_for_letsencrypt_cert "$PUBLIC_DOMAIN"
 echo "[install] waiting for health checks"
 docker compose ps
 
-echo "[install] running migrations"
-docker compose run --rm api ./node_modules/.bin/prisma migrate deploy
+apply_database_schema
 
 echo "[install] optional seed"
 if [[ "${SEED_ON_INSTALL:-false}" == "true" ]]; then

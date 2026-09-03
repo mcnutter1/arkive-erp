@@ -51,9 +51,17 @@ set +a
 echo "Resetting local admin credentials to .env defaults for next login..."
 
 echo "Ensuring database schema is up to date..."
-if ! docker compose run --rm api ./node_modules/.bin/prisma migrate deploy; then
-  echo "Failed to apply migrations. Run scripts/install.sh, verify database connectivity, then retry." >&2
-  exit 1
+if [[ -d "$ROOT_DIR/apps/api/prisma/migrations" ]] && find "$ROOT_DIR/apps/api/prisma/migrations" -mindepth 1 -maxdepth 1 -type d | grep -q .; then
+  if ! docker compose run --rm api ./node_modules/.bin/prisma migrate deploy; then
+    echo "Failed to apply migrations. Run scripts/install.sh, verify database connectivity, then retry." >&2
+    exit 1
+  fi
+else
+  echo "No prisma migrations found; applying schema with prisma db push"
+  if ! docker compose run --rm api ./node_modules/.bin/prisma db push --skip-generate; then
+    echo "Failed to apply schema with db push. Verify database connectivity, then retry." >&2
+    exit 1
+  fi
 fi
 
 docker compose run --rm \
