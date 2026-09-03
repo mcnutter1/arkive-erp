@@ -3,6 +3,12 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 REPO_URL="${ARKIVE_GIT_REPO_URL:-https://github.com/mcnutter1/arkive-erp.git}"
+CANONICAL_ROOT="${ARKIVE_CANONICAL_ROOT:-/opt/arkive}"
+
+if [[ "${FORCE_UPDATE_IN_PLACE:-false}" != "true" ]] && [[ "$ROOT_DIR" != "$CANONICAL_ROOT" ]] && [[ -x "$CANONICAL_ROOT/scripts/update.sh" ]]; then
+  echo "[update] rerouting update execution to $CANONICAL_ROOT"
+  exec "$CANONICAL_ROOT/scripts/update.sh" "$@"
+fi
 
 apply_database_schema() {
   echo "Ensuring database schema..."
@@ -121,12 +127,14 @@ if [[ -z "$BRANCH_NAME" ]]; then
 fi
 
 if git rev-parse --verify HEAD >/dev/null 2>&1; then
-  git checkout "$BRANCH_NAME"
+  if ! git checkout "$BRANCH_NAME"; then
+    echo "[update] local branch not available; recreating from origin/$BRANCH_NAME"
+    git checkout -f -B "$BRANCH_NAME" "origin/$BRANCH_NAME"
+  fi
 else
   if ! git checkout -b "$BRANCH_NAME" --track "origin/$BRANCH_NAME"; then
-    echo "Unable to create local branch from origin/$BRANCH_NAME." >&2
-    echo "Run scripts/install.sh once to resync repository content and retry update." >&2
-    exit 1
+    echo "[update] standard branch checkout failed; forcing sync from origin/$BRANCH_NAME"
+    git checkout -f -B "$BRANCH_NAME" "origin/$BRANCH_NAME"
   fi
 fi
 

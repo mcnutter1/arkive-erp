@@ -84,7 +84,15 @@ const companyTreasuryValue = '__COMPANY__';
 async function readApiError(response: Response, fallback: string): Promise<string> {
   try {
     const payload = (await response.json()) as
-      | { message?: string | string[]; error?: string }
+      | {
+          message?: string | string[];
+          error?:
+            | string
+            | {
+                message?: string;
+                details?: unknown;
+              };
+        }
       | undefined;
 
     if (!payload) {
@@ -101,6 +109,29 @@ async function readApiError(response: Response, fallback: string): Promise<strin
 
     if (typeof payload.error === 'string' && payload.error.trim()) {
       return payload.error;
+    }
+
+    if (payload.error && typeof payload.error === 'object') {
+      const nestedMessage = payload.error.message;
+      if (typeof nestedMessage === 'string' && nestedMessage.trim()) {
+        return nestedMessage;
+      }
+
+      const details = payload.error.details as
+        | string
+        | { message?: string | string[] }
+        | undefined;
+      if (typeof details === 'string' && details.trim()) {
+        return details;
+      }
+      if (details && typeof details === 'object') {
+        if (Array.isArray(details.message) && details.message.length > 0) {
+          return details.message.join(', ');
+        }
+        if (typeof details.message === 'string' && details.message.trim()) {
+          return details.message;
+        }
+      }
     }
   } catch {
     // Ignore parse errors and use fallback.
@@ -135,7 +166,7 @@ export default function EquityPage() {
 
     try {
       const [peopleResp, plansResp, grantsResp, ledgerResp, dashboardResp] = await Promise.all([
-        fetch(`${apiBaseUrl}/people?page=1&pageSize=500`, { credentials: 'include' }),
+        fetch(`${apiBaseUrl}/people?page=1&pageSize=100`, { credentials: 'include' }),
         fetch(`${apiBaseUrl}/equity/plans`, { credentials: 'include' }),
         fetch(`${apiBaseUrl}/equity/grants`, { credentials: 'include' }),
         fetch(`${apiBaseUrl}/equity/ledger`, { credentials: 'include' }),
@@ -374,17 +405,35 @@ export default function EquityPage() {
           <h2 className="text-lg font-semibold">Equity Plans</h2>
           <p className="mt-1 text-sm text-slate-600">Create plans and track reserves against granted awards.</p>
           <form className="mt-4 grid gap-3 md:grid-cols-2" onSubmit={onCreatePlan}>
-            <input name="code" required placeholder="Plan code (e.g. 2026-OP)" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-            <input name="name" required placeholder="Plan name" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-            <input name="reservedShares" required placeholder="Reserved shares" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-            <select name="status" defaultValue="DRAFT" className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
-              <option value="DRAFT">DRAFT</option>
-              <option value="ACTIVE">ACTIVE</option>
-              <option value="PAUSED">PAUSED</option>
-              <option value="RETIRED">RETIRED</option>
-            </select>
-            <input name="effectiveDate" type="date" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-            <input name="expiryDate" type="date" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+            <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+              <span>Plan Code</span>
+              <input name="code" required placeholder="2026-OP" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900" />
+            </label>
+            <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+              <span>Plan Name</span>
+              <input name="name" required placeholder="2026 Stock Option Plan" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900" />
+            </label>
+            <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+              <span>Reserved Shares</span>
+              <input name="reservedShares" required placeholder="1000000" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900" />
+            </label>
+            <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+              <span>Status</span>
+              <select name="status" defaultValue="DRAFT" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900">
+                <option value="DRAFT">DRAFT</option>
+                <option value="ACTIVE">ACTIVE</option>
+                <option value="PAUSED">PAUSED</option>
+                <option value="RETIRED">RETIRED</option>
+              </select>
+            </label>
+            <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+              <span>Effective Date</span>
+              <input name="effectiveDate" type="date" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900" />
+            </label>
+            <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+              <span>Expiry Date</span>
+              <input name="expiryDate" type="date" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900" />
+            </label>
             <button type="submit" disabled={savingPlan} className="md:col-span-2 rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:opacity-60">
               {savingPlan ? 'Saving...' : 'Create Plan'}
             </button>
@@ -442,89 +491,132 @@ export default function EquityPage() {
       <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold">Create Grant</h2>
         <p className="mt-1 text-sm text-slate-600">Use this flow for company-issued option and RSU awards.</p>
+        <p className="mt-1 text-xs text-slate-500">All fields below are labeled. For RSU awards, exercise price is disabled by design.</p>
         <form className="mt-4 grid gap-3 md:grid-cols-4" onSubmit={onCreateGrant}>
-          <select name="personId" required defaultValue="" className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
-            <option value="" disabled>
-              Select recipient
-            </option>
-            {people.map((person) => (
-              <option key={person.id} value={person.id}>
-                {person.legalFirstName} {person.legalLastName}
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Recipient</span>
+            <select name="personId" required defaultValue="" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900">
+              <option value="" disabled>
+                Select recipient
               </option>
-            ))}
-          </select>
+              {people.map((person) => (
+                <option key={person.id} value={person.id}>
+                  {person.legalFirstName} {person.legalLastName}
+                </option>
+              ))}
+            </select>
+          </label>
 
-          <select
-            name="awardType"
-            value={grantAwardType}
-            onChange={(event) => setGrantAwardType(event.target.value as 'OPTION_ISO' | 'OPTION_NSO' | 'RSU')}
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          >
-            <option value="OPTION_NSO">Option - NSO</option>
-            <option value="OPTION_ISO">Option - ISO</option>
-            <option value="RSU">RSU</option>
-          </select>
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Award Type</span>
+            <select
+              name="awardType"
+              value={grantAwardType}
+              onChange={(event) => setGrantAwardType(event.target.value as 'OPTION_ISO' | 'OPTION_NSO' | 'RSU')}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+            >
+              <option value="OPTION_NSO">Option - NSO</option>
+              <option value="OPTION_ISO">Option - ISO</option>
+              <option value="RSU">RSU</option>
+            </select>
+          </label>
 
-          <input
-            name="quantity"
-            required
-            placeholder="Quantity (e.g. 25000)"
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          />
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Grant Quantity</span>
+            <input
+              name="quantity"
+              required
+              placeholder="25000"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+            />
+          </label>
 
-          <select name="planId" defaultValue="" className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
-            <option value="">No plan selected</option>
-            {plans.map((plan) => (
-              <option key={plan.id} value={plan.id}>
-                {plan.code} - {plan.name}
-              </option>
-            ))}
-          </select>
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Source Plan</span>
+            <select name="planId" defaultValue="" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900">
+              <option value="">No plan selected</option>
+              {plans.map((plan) => (
+                <option key={plan.id} value={plan.id}>
+                  {plan.code} - {plan.name}
+                </option>
+              ))}
+            </select>
+          </label>
 
-          <input name="grantDate" type="date" required defaultValue={dateInputToday()} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-          <input
-            name="currency"
-            defaultValue="USD"
-            required
-            maxLength={3}
-            placeholder="Currency"
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          />
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Grant Date</span>
+            <input name="grantDate" type="date" required defaultValue={dateInputToday()} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900" />
+          </label>
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Currency</span>
+            <input
+              name="currency"
+              defaultValue="USD"
+              required
+              maxLength={3}
+              placeholder="USD"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+            />
+          </label>
 
           {(grantAwardType === 'OPTION_NSO' || grantAwardType === 'OPTION_ISO') ? (
-            <input
-              name="exercisePrice"
-              required
-              placeholder="Exercise price"
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-            />
+            <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+              <span>Exercise Price</span>
+              <input
+                name="exercisePrice"
+                required
+                placeholder="1.50"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+              />
+            </label>
           ) : (
-            <input
-              disabled
-              value="No exercise price for RSU"
-              className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500"
-              readOnly
-            />
+            <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+              <span>Exercise Price</span>
+              <input
+                disabled
+                value="No exercise price for RSU"
+                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-500"
+                readOnly
+              />
+            </label>
           )}
 
-          <input name="expirationDate" type="date" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Expiration Date</span>
+            <input name="expirationDate" type="date" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900" />
+          </label>
 
-          <input
-            name="vestingStartDate"
-            type="date"
-            required
-            defaultValue={dateInputToday()}
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          />
-          <input name="cliffMonths" type="number" min={0} max={120} defaultValue={12} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-          <input name="durationMonths" type="number" min={1} max={240} defaultValue={48} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-          <input name="intervalMonths" type="number" min={1} max={60} defaultValue={1} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Vesting Start Date</span>
+            <input
+              name="vestingStartDate"
+              type="date"
+              required
+              defaultValue={dateInputToday()}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+            />
+          </label>
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Cliff (Months)</span>
+            <input name="cliffMonths" type="number" min={0} max={120} defaultValue={12} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900" />
+          </label>
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Vesting Duration (Months)</span>
+            <input name="durationMonths" type="number" min={1} max={240} defaultValue={48} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900" />
+          </label>
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Vesting Interval (Months)</span>
+            <input name="intervalMonths" type="number" min={1} max={60} defaultValue={1} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900" />
+          </label>
 
-          <input
-            name="notes"
-            placeholder="Grant notes"
-            className="md:col-span-3 rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          />
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500 md:col-span-3">
+            <span>Grant Notes</span>
+            <input
+              name="notes"
+              placeholder="Optional notes for legal/admin context"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+            />
+          </label>
 
           <button
             type="submit"
@@ -616,31 +708,52 @@ export default function EquityPage() {
           Use for corrective, transfer, or special events. Company treasury can be selected as either side.
         </p>
         <form className="mt-4 grid gap-3 md:grid-cols-3" onSubmit={onCreateManualTxn}>
-          <select name="type" required className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
-            {['ISSUE', 'VEST', 'EXERCISE', 'CANCEL', 'TRANSFER', 'CONVERT', 'SPLIT', 'REVERSE', 'CORRECT'].map((type) => (
-              <option key={type} value={type}>{type}</option>
-            ))}
-          </select>
-          <input name="effectiveAt" type="datetime-local" required className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-          <input name="quantity" required placeholder="Quantity" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-          <input name="unitPrice" placeholder="Unit price" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-          <select name="fromPersonId" defaultValue={companyTreasuryValue} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
-            <option value={companyTreasuryValue}>Company Treasury</option>
-            {people.map((person) => (
-              <option key={person.id} value={person.id}>
-                {person.legalFirstName} {person.legalLastName}
-              </option>
-            ))}
-          </select>
-          <select name="toPersonId" defaultValue={companyTreasuryValue} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
-            <option value={companyTreasuryValue}>Company Treasury</option>
-            {people.map((person) => (
-              <option key={person.id} value={person.id}>
-                {person.legalFirstName} {person.legalLastName}
-              </option>
-            ))}
-          </select>
-          <input name="reason" placeholder="Reason" className="md:col-span-2 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Transaction Type</span>
+            <select name="type" required className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900">
+              {['ISSUE', 'VEST', 'EXERCISE', 'CANCEL', 'TRANSFER', 'CONVERT', 'SPLIT', 'REVERSE', 'CORRECT'].map((type) => (
+                <option key={type} value={type}>{type}</option>
+              ))}
+            </select>
+          </label>
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Effective Date & Time</span>
+            <input name="effectiveAt" type="datetime-local" required className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900" />
+          </label>
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Quantity</span>
+            <input name="quantity" required placeholder="1000" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900" />
+          </label>
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Unit Price</span>
+            <input name="unitPrice" placeholder="Optional" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900" />
+          </label>
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>From Holder</span>
+            <select name="fromPersonId" defaultValue={companyTreasuryValue} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900">
+              <option value={companyTreasuryValue}>Company Treasury</option>
+              {people.map((person) => (
+                <option key={person.id} value={person.id}>
+                  {person.legalFirstName} {person.legalLastName}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>To Holder</span>
+            <select name="toPersonId" defaultValue={companyTreasuryValue} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900">
+              <option value={companyTreasuryValue}>Company Treasury</option>
+              {people.map((person) => (
+                <option key={person.id} value={person.id}>
+                  {person.legalFirstName} {person.legalLastName}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500 md:col-span-2">
+            <span>Reason</span>
+            <input name="reason" placeholder="Why this transaction is being recorded" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900" />
+          </label>
           <button type="submit" disabled={savingTxn} className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:opacity-60">
             {savingTxn ? 'Saving...' : 'Record Transaction'}
           </button>

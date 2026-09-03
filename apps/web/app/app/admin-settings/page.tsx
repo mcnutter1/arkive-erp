@@ -172,7 +172,7 @@ export default function AdminSettingsPage() {
         listSection('integrations'),
         listSection('equity'),
         listSection('company'),
-        fetch(`${apiBaseUrl}/people?page=1&pageSize=500`, { credentials: 'include' }),
+        fetch(`${apiBaseUrl}/people?page=1&pageSize=100`, { credentials: 'include' }),
       ]);
 
       if (!peopleResp.ok) {

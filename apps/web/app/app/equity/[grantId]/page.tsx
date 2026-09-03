@@ -100,7 +100,15 @@ const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? '/api/v1';
 async function readApiError(response: Response, fallback: string): Promise<string> {
   try {
     const payload = (await response.json()) as
-      | { message?: string | string[]; error?: string }
+      | {
+          message?: string | string[];
+          error?:
+            | string
+            | {
+                message?: string;
+                details?: unknown;
+              };
+        }
       | undefined;
 
     if (!payload) {
@@ -117,6 +125,29 @@ async function readApiError(response: Response, fallback: string): Promise<strin
 
     if (typeof payload.error === 'string' && payload.error.trim()) {
       return payload.error;
+    }
+
+    if (payload.error && typeof payload.error === 'object') {
+      const nestedMessage = payload.error.message;
+      if (typeof nestedMessage === 'string' && nestedMessage.trim()) {
+        return nestedMessage;
+      }
+
+      const details = payload.error.details as
+        | string
+        | { message?: string | string[] }
+        | undefined;
+      if (typeof details === 'string' && details.trim()) {
+        return details;
+      }
+      if (details && typeof details === 'object') {
+        if (Array.isArray(details.message) && details.message.length > 0) {
+          return details.message.join(', ');
+        }
+        if (typeof details.message === 'string' && details.message.trim()) {
+          return details.message;
+        }
+      }
     }
   } catch {
     // Ignore and use fallback.
@@ -173,7 +204,7 @@ export default function GrantDetailPage() {
       const query = asOf ? `?asOf=${encodeURIComponent(new Date(`${asOf}T00:00:00.000Z`).toISOString())}` : '';
       const [detailResp, peopleResp] = await Promise.all([
         fetch(`${apiBaseUrl}/equity/grants/${grantId}${query}`, { credentials: 'include' }),
-        fetch(`${apiBaseUrl}/people?page=1&pageSize=500`, { credentials: 'include' }),
+        fetch(`${apiBaseUrl}/people?page=1&pageSize=100`, { credentials: 'include' }),
       ]);
 
       if (!detailResp.ok) {
@@ -559,9 +590,16 @@ export default function GrantDetailPage() {
 
         <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <h2 className="text-lg font-semibold">Exercise Workflow</h2>
+          <p className="mt-1 text-xs text-slate-500">Submit quantity and optional notes, then manage approvals from the request list.</p>
           <form className="mt-3 grid gap-3 md:grid-cols-2" onSubmit={createExerciseRequest}>
-            <input name="quantity" required placeholder="Exercise quantity" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-            <input name="notes" placeholder="Notes" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+            <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+              <span>Exercise Quantity</span>
+              <input name="quantity" required placeholder="1000" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900" />
+            </label>
+            <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+              <span>Notes</span>
+              <input name="notes" placeholder="Optional context" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900" />
+            </label>
             <button type="submit" disabled={savingExercise} className="md:col-span-2 rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:opacity-60">
               {savingExercise ? 'Submitting...' : 'Create Exercise Request'}
             </button>

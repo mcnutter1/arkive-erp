@@ -24,7 +24,15 @@ const engagementStatuses = ['DRAFT', 'PREBOARDING', 'ACTIVE', 'PAUSED', 'OFFBOAR
 async function readApiError(response: Response, fallback: string): Promise<string> {
   try {
     const payload = (await response.json()) as
-      | { message?: string | string[]; error?: string }
+      | {
+          message?: string | string[];
+          error?:
+            | string
+            | {
+                message?: string;
+                details?: unknown;
+              };
+        }
       | undefined;
 
     if (!payload) {
@@ -41,6 +49,29 @@ async function readApiError(response: Response, fallback: string): Promise<strin
 
     if (typeof payload.error === 'string' && payload.error.trim()) {
       return payload.error;
+    }
+
+    if (payload.error && typeof payload.error === 'object') {
+      const nestedMessage = payload.error.message;
+      if (typeof nestedMessage === 'string' && nestedMessage.trim()) {
+        return nestedMessage;
+      }
+
+      const details = payload.error.details as
+        | string
+        | { message?: string | string[] }
+        | undefined;
+      if (typeof details === 'string' && details.trim()) {
+        return details;
+      }
+      if (details && typeof details === 'object') {
+        if (Array.isArray(details.message) && details.message.length > 0) {
+          return details.message.join(', ');
+        }
+        if (typeof details.message === 'string' && details.message.trim()) {
+          return details.message;
+        }
+      }
     }
   } catch {
     // Ignore parse errors and fall back to generic text.
