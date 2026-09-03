@@ -3,12 +3,6 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 LOCK_FILE="$ROOT_DIR/data/runtime/deploy.lock"
-TAG="${1:-}"
-
-if [[ -z "$TAG" ]]; then
-  echo "Usage: scripts/update.sh <release-tag>" >&2
-  exit 1
-fi
 
 cd "$ROOT_DIR"
 
@@ -44,8 +38,20 @@ fi
 
 scripts/backup.sh
 
-git fetch --tags
-git checkout --detach "$TAG"
+git fetch origin --prune
+
+if BRANCH_NAME="$(git symbolic-ref --quiet --short HEAD 2>/dev/null)"; then
+  :
+else
+  BRANCH_NAME="${UPDATE_BRANCH:-$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's@^origin/@@')}"
+  if [[ -z "$BRANCH_NAME" ]]; then
+    echo "Unable to determine target branch. Set UPDATE_BRANCH and retry." >&2
+    exit 1
+  fi
+  git checkout "$BRANCH_NAME"
+fi
+
+git pull --ff-only origin "$BRANCH_NAME"
 
 echo "Pending migrations (if any):"
 docker compose run --rm api ./node_modules/.bin/prisma migrate status || true
@@ -56,5 +62,6 @@ docker compose run --rm api ./node_modules/.bin/prisma migrate deploy
 
 scripts/health-check.sh
 
-echo "$TAG $(date -u +%FT%TZ) success" >> "$ROOT_DIR/data/runtime/deploy-history.log"
-echo "Update complete: $TAG"
+DEPLOY_SHA="$(git rev-parse --short HEAD)"
+echo "$BRANCH_NAME@$DEPLOY_SHA $(date -u +%FT%TZ) success" >> "$ROOT_DIR/data/runtime/deploy-history.log"
+echo "Update complete: $BRANCH_NAME@$DEPLOY_SHA"

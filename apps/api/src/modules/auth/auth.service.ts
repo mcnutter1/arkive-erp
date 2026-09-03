@@ -431,7 +431,7 @@ export class AuthService {
     password: string,
     ipAddress?: string,
     userAgent?: string,
-  ): Promise<{ cookie: string; redirectTo: string }> {
+  ): Promise<{ cookie: string; redirectTo: string; mustRotatePassword: boolean }> {
     if (!this.isLocalLoginEnabled()) {
       throw new UnauthorizedException('Local login is disabled');
     }
@@ -476,7 +476,7 @@ export class AuthService {
       user = await this.prisma.user.create({
         data: {
           organizationId: org.id,
-          email: localAdminEmail,
+          email: localAdmin.email,
           status: 'ACTIVE',
         },
       });

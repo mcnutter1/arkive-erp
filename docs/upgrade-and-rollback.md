@@ -5,8 +5,10 @@
 Run:
 
 ```bash
-scripts/update.sh <release-tag>
+scripts/update.sh
 ```
+
+The updater fetches from `origin` and fast-forwards the current branch to the latest remote commit. If HEAD is detached, it uses `UPDATE_BRANCH` (if set) or falls back to `origin/HEAD`.
 
 Behavior:
 
