@@ -18,6 +18,34 @@ type PeopleResponse = {
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? '/api/v1';
 
+async function readApiError(response: Response, fallback: string): Promise<string> {
+  try {
+    const payload = (await response.json()) as
+      | { message?: string | string[]; error?: string }
+      | undefined;
+
+    if (!payload) {
+      return fallback;
+    }
+
+    if (Array.isArray(payload.message) && payload.message.length > 0) {
+      return payload.message.join(', ');
+    }
+
+    if (typeof payload.message === 'string' && payload.message.trim()) {
+      return payload.message;
+    }
+
+    if (typeof payload.error === 'string' && payload.error.trim()) {
+      return payload.error;
+    }
+  } catch {
+    // Ignore parse errors and fall back to generic text.
+  }
+
+  return fallback;
+}
+
 export default function PeoplePage() {
   const [people, setPeople] = useState<Person[]>([]);
   const [loading, setLoading] = useState(true);
@@ -43,7 +71,7 @@ export default function PeoplePage() {
       });
 
       if (!response.ok) {
-        setError('Unable to load people.');
+        setError(await readApiError(response, 'Unable to load people.'));
         return;
       }
 
@@ -85,7 +113,7 @@ export default function PeoplePage() {
       });
 
       if (!response.ok) {
-        setError('Unable to create person.');
+        setError(await readApiError(response, 'Unable to create person.'));
         return;
       }
 

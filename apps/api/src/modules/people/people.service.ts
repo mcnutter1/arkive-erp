@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../common/prisma.service.js';
@@ -9,6 +9,16 @@ import { CreateEngagementDto, CreatePersonDto, PeopleQueryDto } from './dto.js';
 @Injectable()
 export class PeopleService {
   constructor(private readonly prisma: PrismaService) {}
+
+  private normalizePrismaError(error: unknown): never {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2021') {
+      throw new ServiceUnavailableException(
+        'Database schema is not initialized. Run scripts/update.sh to apply schema.',
+      );
+    }
+
+    throw error;
+  }
 
   async listPeople(
     actor: AuthenticatedUser,
@@ -29,21 +39,28 @@ export class PeopleService {
     };
 
     const skip = (query.page - 1) * query.pageSize;
-    const [total, data] = await this.prisma.$transaction([
-      this.prisma.person.count({ where }),
-      this.prisma.person.findMany({
-        where,
-        orderBy: [{ legalLastName: 'asc' }, { legalFirstName: 'asc' }],
-        skip,
-        take: query.pageSize,
-        select: {
-          id: true,
-          legalFirstName: true,
-          legalLastName: true,
-          primaryEmail: true,
-        },
-      }),
-    ]);
+    let total: number;
+    let data: { id: string; legalFirstName: string; legalLastName: string; primaryEmail: string | null }[];
+
+    try {
+      [total, data] = await this.prisma.$transaction([
+        this.prisma.person.count({ where }),
+        this.prisma.person.findMany({
+          where,
+          orderBy: [{ legalLastName: 'asc' }, { legalFirstName: 'asc' }],
+          skip,
+          take: query.pageSize,
+          select: {
+            id: true,
+            legalFirstName: true,
+            legalLastName: true,
+            primaryEmail: true,
+          },
+        }),
+      ]);
+    } catch (error) {
+      this.normalizePrismaError(error);
+    }
 
     return {
       data,
@@ -54,16 +71,20 @@ export class PeopleService {
   }
 
   async createPerson(actor: AuthenticatedUser, dto: CreatePersonDto) {
-    return this.prisma.person.create({
-      data: {
-        organizationId: actor.organizationId,
-        legalFirstName: dto.legalFirstName,
-        legalLastName: dto.legalLastName,
-        preferredName: dto.preferredName,
-        primaryEmail: dto.primaryEmail,
-        timezone: dto.timezone ?? 'UTC',
-      },
-    });
+    try {
+      return await this.prisma.person.create({
+        data: {
+          organizationId: actor.organizationId,
+          legalFirstName: dto.legalFirstName,
+          legalLastName: dto.legalLastName,
+          preferredName: dto.preferredName,
+          primaryEmail: dto.primaryEmail,
+          timezone: dto.timezone ?? 'UTC',
+        },
+      });
+    } catch (error) {
+      this.normalizePrismaError(error);
+    }
   }
 
   async createEngagement(actor: AuthenticatedUser, dto: CreateEngagementDto) {

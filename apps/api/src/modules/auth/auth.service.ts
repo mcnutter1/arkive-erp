@@ -151,10 +151,6 @@ export class AuthService {
     };
   }
 
-  private isLocalAdminEmail(email: string): boolean {
-    return this.isLocalLoginEnabled() && email.toLowerCase() === this.getLocalAdminEmail().toLowerCase();
-  }
-
   private async isLocalAdminUser(userId: string): Promise<boolean> {
     const user = await this.prisma.user.findFirst({
       where: { id: userId, archivedAt: null },
@@ -215,12 +211,14 @@ export class AuthService {
       .filter((value, index, self) => self.indexOf(value) === index);
 
     const userEmail = user.email;
-    const localAdmin = this.isLocalAdminEmail(userEmail);
+    const localCredentials = await this.getLocalAdminCredentials(user.organizationId);
+    const localAdmin =
+      this.isLocalLoginEnabled() &&
+      userEmail.toLowerCase() === localCredentials.email.toLowerCase();
     let mustRotatePassword = false;
 
     if (localAdmin) {
-      const local = await this.getLocalAdminCredentials(user.organizationId);
-      mustRotatePassword = local.mustRotatePassword;
+      mustRotatePassword = localCredentials.mustRotatePassword;
     }
 
     return {
