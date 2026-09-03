@@ -16,7 +16,8 @@ Operational runtime files are written under `ARKIVE_DATA_ROOT` (default `/opt/ar
 Behavior:
 
 - Pulls latest commit from GitHub remote
-- Blocks dirty working tree unless override set
+- Auto-stashes dirty working tree by default before pull (`AUTO_STASH_DIRTY_DEPLOY=true`)
+- Supports explicit dirty deploy override (`ALLOW_DIRTY_DEPLOY=true`)
 - Acquires deployment lock
 - Runs pre-deploy backup
 - Aborts if `COMPOSE_PROJECT_NAME` changes from last successful deploy

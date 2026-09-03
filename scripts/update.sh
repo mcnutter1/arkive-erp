@@ -50,10 +50,29 @@ else
   git remote add origin "$REPO_URL"
 fi
 
+AUTO_STASH_DIRTY_DEPLOY="${AUTO_STASH_DIRTY_DEPLOY:-true}"
+STASH_REF=""
+
 if git rev-parse --verify HEAD >/dev/null 2>&1; then
-  if [[ -n "$(git status --porcelain)" && "${ALLOW_DIRTY_DEPLOY:-false}" != "true" ]]; then
-    echo "Working tree has uncommitted changes. Set ALLOW_DIRTY_DEPLOY=true to override." >&2
-    exit 1
+  if [[ -n "$(git status --porcelain)" ]]; then
+    if [[ "${ALLOW_DIRTY_DEPLOY:-false}" == "true" ]]; then
+      echo "[update] continuing with dirty working tree (ALLOW_DIRTY_DEPLOY=true)"
+    elif [[ "$AUTO_STASH_DIRTY_DEPLOY" == "true" ]]; then
+      echo "[update] stashing local changes before pulling latest code"
+      git stash push -u -m "arkive-auto-stash-$(date -u +%FT%TZ)" >/dev/null || true
+      STASH_REF="$(git stash list | head -n 1 | cut -d: -f1 || true)"
+      if [[ -n "$(git status --porcelain)" ]]; then
+        echo "Working tree still has uncommitted changes after auto-stash." >&2
+        echo "Resolve manually or set ALLOW_DIRTY_DEPLOY=true to force." >&2
+        exit 1
+      fi
+      if [[ -n "$STASH_REF" ]]; then
+        echo "[update] local changes saved as $STASH_REF"
+      fi
+    else
+      echo "Working tree has uncommitted changes. Set ALLOW_DIRTY_DEPLOY=true or AUTO_STASH_DIRTY_DEPLOY=true." >&2
+      exit 1
+    fi
   fi
 fi
 
