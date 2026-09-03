@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+REPO_URL="${ARKIVE_GIT_REPO_URL:-https://github.com/mcnutter1/arkive-erp.git}"
 
 cd "$ROOT_DIR"
 
@@ -20,9 +21,27 @@ fi
 DATA_ROOT="${ARKIVE_DATA_ROOT:-/opt/arkive}"
 LOCK_FILE="$DATA_ROOT/runtime/deploy.lock"
 
-if [[ -n "$(git status --porcelain)" && "${ALLOW_DIRTY_DEPLOY:-false}" != "true" ]]; then
-  echo "Working tree has uncommitted changes. Set ALLOW_DIRTY_DEPLOY=true to override." >&2
+if ! command -v git >/dev/null 2>&1; then
+  echo "Missing required command: git" >&2
   exit 1
+fi
+
+if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  echo "[update] no git metadata found at $ROOT_DIR; bootstrapping repository"
+  git init
+fi
+
+if git remote get-url origin >/dev/null 2>&1; then
+  git remote set-url origin "$REPO_URL"
+else
+  git remote add origin "$REPO_URL"
+fi
+
+if git rev-parse --verify HEAD >/dev/null 2>&1; then
+  if [[ -n "$(git status --porcelain)" && "${ALLOW_DIRTY_DEPLOY:-false}" != "true" ]]; then
+    echo "Working tree has uncommitted changes. Set ALLOW_DIRTY_DEPLOY=true to override." >&2
+    exit 1
+  fi
 fi
 
 mkdir -p "$(dirname "$LOCK_FILE")"
@@ -42,15 +61,29 @@ scripts/backup.sh
 
 git fetch origin --prune
 
-if BRANCH_NAME="$(git symbolic-ref --quiet --short HEAD 2>/dev/null)"; then
-  :
+BRANCH_NAME="${UPDATE_BRANCH:-}"
+if [[ -z "$BRANCH_NAME" ]]; then
+  BRANCH_NAME="$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+fi
+if [[ -z "$BRANCH_NAME" ]]; then
+  BRANCH_NAME="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's@^origin/@@' || true)"
+fi
+if [[ -z "$BRANCH_NAME" ]]; then
+  BRANCH_NAME="$(git ls-remote --symref origin HEAD 2>/dev/null | awk '/^ref:/ {sub("refs/heads/", "", $2); print $2; exit}')"
+fi
+if [[ -z "$BRANCH_NAME" ]]; then
+  echo "Unable to determine target branch. Set UPDATE_BRANCH and retry." >&2
+  exit 1
+fi
+
+if git rev-parse --verify HEAD >/dev/null 2>&1; then
+  git checkout "$BRANCH_NAME"
 else
-  BRANCH_NAME="${UPDATE_BRANCH:-$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's@^origin/@@')}"
-  if [[ -z "$BRANCH_NAME" ]]; then
-    echo "Unable to determine target branch. Set UPDATE_BRANCH and retry." >&2
+  if ! git checkout -b "$BRANCH_NAME" --track "origin/$BRANCH_NAME"; then
+    echo "Unable to create local branch from origin/$BRANCH_NAME." >&2
+    echo "Run scripts/install.sh once to resync repository content and retry update." >&2
     exit 1
   fi
-  git checkout "$BRANCH_NAME"
 fi
 
 git pull --ff-only origin "$BRANCH_NAME"

@@ -27,8 +27,17 @@ export class AuthService {
     return createHash('sha256').update(input).digest('hex');
   }
 
+  private isTruthy(value: string | undefined, fallback = false): boolean {
+    if (value === undefined) {
+      return fallback;
+    }
+
+    const normalized = value.trim().toLowerCase();
+    return normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'on';
+  }
+
   private isLocalLoginEnabled(): boolean {
-    return (this.config.get<string>('AUTH_LOCAL_LOGIN_ENABLED') ?? 'true') === 'true';
+    return this.isTruthy(this.config.get<string>('AUTH_LOCAL_LOGIN_ENABLED'), true);
   }
 
   private getLocalAdminUsername(): string {
@@ -452,7 +461,7 @@ export class AuthService {
 
     const localAdmin = await this.getLocalAdminCredentials(org.id);
 
-    if (username !== localAdmin.username) {
+    if (username.trim().toLowerCase() !== localAdmin.username.trim().toLowerCase()) {
       throw new UnauthorizedException('Invalid username or password');
     }
 

@@ -236,14 +236,13 @@ if [[ "$ROOT_DIR" != "$INSTALL_ROOT" ]]; then
 
   if command -v rsync >/dev/null 2>&1; then
     run_as_root rsync -a \
-      --exclude '.git/' \
       --exclude 'node_modules/' \
       --exclude '.next/' \
       --exclude 'dist/' \
       --exclude 'data/' \
       "$ROOT_DIR/" "$INSTALL_ROOT/"
   else
-    run_as_root sh -c "cd '$ROOT_DIR' && tar cf - --exclude=.git --exclude=node_modules --exclude=.next --exclude=dist --exclude=data . | tar xf - -C '$INSTALL_ROOT'"
+    run_as_root sh -c "cd '$ROOT_DIR' && tar cf - --exclude=node_modules --exclude=.next --exclude=dist --exclude=data . | tar xf - -C '$INSTALL_ROOT'"
   fi
 
   echo "[install] re-running installer from $INSTALL_ROOT"

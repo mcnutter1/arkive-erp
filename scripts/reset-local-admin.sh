@@ -9,6 +9,20 @@ if [[ ! -f "$ROOT_DIR/.env" ]]; then
   exit 1
 fi
 
+set_env_var() {
+  local key="$1"
+  local value="$2"
+  local tmp
+  tmp="$(mktemp)"
+  if grep -q "^${key}=" "$ROOT_DIR/.env"; then
+    sed "s|^${key}=.*|${key}=${value}|" "$ROOT_DIR/.env" > "$tmp"
+  else
+    cat "$ROOT_DIR/.env" > "$tmp"
+    printf '\n%s=%s\n' "$key" "$value" >> "$tmp"
+  fi
+  mv "$tmp" "$ROOT_DIR/.env"
+}
+
 # shellcheck source=/dev/null
 set -a
 source "$ROOT_DIR/.env"
@@ -19,21 +33,36 @@ if ! docker compose version >/dev/null 2>&1; then
   exit 1
 fi
 
-ADMIN_USERNAME="${AUTH_LOCAL_ADMIN_USERNAME:-admin}"
-ADMIN_PASSWORD="${AUTH_LOCAL_ADMIN_PASSWORD:-admin}"
-ADMIN_EMAIL="${AUTH_LOCAL_ADMIN_EMAIL:-admin@local.arkive}"
+ADMIN_USERNAME="${1:-admin}"
+ADMIN_PASSWORD="${2:-admin}"
+ADMIN_EMAIL="${3:-admin@local.arkive}"
 
-if [[ "${AUTH_LOCAL_LOGIN_ENABLED:-true}" != "true" ]]; then
-  echo "AUTH_LOCAL_LOGIN_ENABLED is not true in .env. Enable it before using local login." >&2
-  exit 1
-fi
+# Force local auth config to match the reset credentials so login behavior is deterministic.
+set_env_var "AUTH_LOCAL_LOGIN_ENABLED" "true"
+set_env_var "AUTH_LOCAL_ADMIN_USERNAME" "$ADMIN_USERNAME"
+set_env_var "AUTH_LOCAL_ADMIN_PASSWORD" "$ADMIN_PASSWORD"
+set_env_var "AUTH_LOCAL_ADMIN_EMAIL" "$ADMIN_EMAIL"
+
+# Reload env with forced values.
+set -a
+source "$ROOT_DIR/.env"
+set +a
 
 echo "Resetting local admin credentials to .env defaults for next login..."
 
+echo "Ensuring database schema is up to date..."
+if ! docker compose run --rm api ./node_modules/.bin/prisma migrate deploy; then
+  echo "Failed to apply migrations. Run scripts/install.sh, verify database connectivity, then retry." >&2
+  exit 1
+fi
+
 docker compose run --rm \
+  -e RESET_ADMIN_USERNAME="$ADMIN_USERNAME" \
+  -e RESET_ADMIN_PASSWORD="$ADMIN_PASSWORD" \
   -e RESET_ADMIN_EMAIL="$ADMIN_EMAIL" \
   api node - <<'NODE'
 const { PrismaClient } = require('@prisma/client');
+const { randomBytes, scryptSync } = require('crypto');
 
 async function main() {
   const prisma = new PrismaClient();
@@ -53,13 +82,42 @@ async function main() {
       });
     }
 
+    const adminUsername = process.env.RESET_ADMIN_USERNAME || 'admin';
+    const adminPassword = process.env.RESET_ADMIN_PASSWORD || 'admin';
     const adminEmail = process.env.RESET_ADMIN_EMAIL || 'admin@local.arkive';
+    const salt = randomBytes(16).toString('hex');
+    const passwordHash = scryptSync(adminPassword, salt, 64).toString('hex');
 
-    await prisma.systemSetting.deleteMany({
+    await prisma.systemSetting.upsert({
       where: {
+        organizationId_section_key: {
+          organizationId: org.id,
+          section: 'auth',
+          key: 'localAdmin',
+        },
+      },
+      update: {
+        value: {
+          username: adminUsername,
+          email: adminEmail,
+          passwordHash,
+          passwordSalt: salt,
+          rotatedAt: new Date().toISOString(),
+        },
+        updatedByUserId: null,
+      },
+      create: {
         organizationId: org.id,
         section: 'auth',
         key: 'localAdmin',
+        value: {
+          username: adminUsername,
+          email: adminEmail,
+          passwordHash,
+          passwordSalt: salt,
+          rotatedAt: new Date().toISOString(),
+        },
+        updatedByUserId: null,
       },
     });
 
@@ -87,4 +145,6 @@ main().catch((err) => {
 NODE
 
 echo "Done. Local login uses username=${ADMIN_USERNAME} password=${ADMIN_PASSWORD}"
-echo "If containers are not running yet, start them: docker compose up -d api web caddy"
+echo "Recreating API and Web containers to pick up auth env changes..."
+docker compose up -d --force-recreate --no-deps api web caddy
+echo "If login still fails, inspect logs: docker compose logs --tail=120 api"
