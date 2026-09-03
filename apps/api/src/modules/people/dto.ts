@@ -26,45 +26,6 @@ type EngagementStatus = (typeof EngagementStatusValues)[keyof typeof EngagementS
 
 import { PaginationDto } from '../common/pagination.dto.js';
 
-export class CreatePersonDto {
-  @IsString()
-  @MaxLength(120)
-  legalFirstName!: string;
-
-  @IsString()
-  @MaxLength(120)
-  legalLastName!: string;
-
-  @IsOptional()
-  @IsString()
-  preferredName?: string;
-
-  @IsOptional()
-  @IsEmail()
-  primaryEmail?: string;
-
-  @IsOptional()
-  @IsString()
-  timezone?: string;
-
-  @IsOptional()
-  @IsEmail()
-  businessEmail?: string;
-
-  @IsOptional()
-  @IsString()
-  classification?: string;
-
-  @IsOptional()
-  @IsString()
-  employmentStatus?: string;
-
-  @IsOptional()
-  @ValidateNested()
-  @Type(() => PersonHrisProfileDto)
-  hrisProfile?: PersonHrisProfileDto;
-}
-
 class PersonAddressDto {
   @IsOptional()
   @IsString()
@@ -211,6 +172,45 @@ class PersonHrisProfileDto {
   @IsOptional()
   @IsString()
   notes?: string;
+}
+
+export class CreatePersonDto {
+  @IsString()
+  @MaxLength(120)
+  legalFirstName!: string;
+
+  @IsString()
+  @MaxLength(120)
+  legalLastName!: string;
+
+  @IsOptional()
+  @IsString()
+  preferredName?: string;
+
+  @IsOptional()
+  @IsEmail()
+  primaryEmail?: string;
+
+  @IsOptional()
+  @IsString()
+  timezone?: string;
+
+  @IsOptional()
+  @IsEmail()
+  businessEmail?: string;
+
+  @IsOptional()
+  @IsString()
+  classification?: string;
+
+  @IsOptional()
+  @IsString()
+  employmentStatus?: string;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => PersonHrisProfileDto)
+  hrisProfile?: PersonHrisProfileDto;
 }
 
 export class UpdatePersonDto {
