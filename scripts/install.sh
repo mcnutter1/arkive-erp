@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 ENV_FILE="$ROOT_DIR/.env"
 ENV_EXAMPLE="$ROOT_DIR/.env.example"
+INSTALL_ROOT="/opt/arkive"
 DEFAULT_DATA_ROOT="/opt/arkive"
 
 require_cmd() {
@@ -229,11 +230,28 @@ if [[ -f /etc/os-release ]]; then
   fi
 fi
 
-if [[ "$ROOT_DIR" != /opt/* && "${ALLOW_NON_OPT_INSTALL:-false}" != "true" ]]; then
-  echo "Production install path must be under /opt (current: $ROOT_DIR)." >&2
-  echo "Clone the repo under /opt (example: /opt/arkive-erp) and rerun install." >&2
-  echo "Set ALLOW_NON_OPT_INSTALL=true only if you intentionally need a non-/opt install." >&2
-  exit 1
+if [[ "$ROOT_DIR" != "$INSTALL_ROOT" ]]; then
+  echo "[install] preparing install workspace at $INSTALL_ROOT"
+  run_as_root mkdir -p "$INSTALL_ROOT"
+
+  if command -v rsync >/dev/null 2>&1; then
+    run_as_root rsync -a \
+      --exclude '.git/' \
+      --exclude 'node_modules/' \
+      --exclude '.next/' \
+      --exclude 'dist/' \
+      --exclude 'data/' \
+      "$ROOT_DIR/" "$INSTALL_ROOT/"
+  else
+    run_as_root sh -c "cd '$ROOT_DIR' && tar cf - --exclude=.git --exclude=node_modules --exclude=.next --exclude=dist --exclude=data . | tar xf - -C '$INSTALL_ROOT'"
+  fi
+
+  echo "[install] re-running installer from $INSTALL_ROOT"
+  if [[ "${EUID}" -eq 0 ]]; then
+    exec "$INSTALL_ROOT/scripts/install.sh"
+  fi
+  require_cmd sudo
+  exec sudo "$INSTALL_ROOT/scripts/install.sh"
 fi
 
 ensure_ubuntu_runtime_deps
