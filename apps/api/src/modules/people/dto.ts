@@ -1,5 +1,4 @@
-import { Transform } from 'class-transformer';
-import { IsEmail, IsEnum, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
+import { IsDateString, IsEmail, IsEnum, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
 
 const EngagementKindValues = {
   EMPLOYEE: 'EMPLOYEE',
@@ -68,12 +67,12 @@ export class CreateEngagementDto {
   title?: string;
 
   @IsOptional()
-  @Transform(({ value }) => (value ? new Date(value) : undefined))
-  startDate?: Date;
+  @IsDateString()
+  startDate?: string;
 
   @IsOptional()
-  @Transform(({ value }) => (value ? new Date(value) : undefined))
-  endDate?: Date;
+  @IsDateString()
+  endDate?: string;
 }
 
 export class PeopleQueryDto extends PaginationDto {

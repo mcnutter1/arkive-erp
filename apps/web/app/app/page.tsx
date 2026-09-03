@@ -8,6 +8,13 @@ export default function AppHomePage() {
         <p className="mt-2 text-sm text-slate-600">
           Core platform is online. Use the modules below to begin configuration and operations.
         </p>
+        <ol className="mt-4 list-decimal space-y-1 pl-5 text-sm text-slate-700">
+          <li>Create people and engagements in People Ops.</li>
+          <li>Set base shares and opening balances in Equity.</li>
+          <li>Configure admin integrations and signatory defaults.</li>
+          <li>Create grants, tasks, and approvals for operating workflows.</li>
+          <li>Use Documents, Search, and Reports for audit trails.</li>
+        </ol>
       </article>
 
       <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">

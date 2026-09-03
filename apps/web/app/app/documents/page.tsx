@@ -2,6 +2,8 @@
 
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 
+import { readApiError } from '../_utils/read-api-error';
+
 type DocumentRecord = {
   id: string;
   category: string;
@@ -65,7 +67,7 @@ export default function DocumentsPage() {
         credentials: 'include',
       });
       if (!response.ok) {
-        setError('Unable to load documents.');
+        setError(await readApiError(response, 'Unable to load documents.'));
         return;
       }
 
@@ -93,7 +95,7 @@ export default function DocumentsPage() {
         credentials: 'include',
       });
       if (!response.ok) {
-        setError('Unable to load document versions.');
+        setError(await readApiError(response, 'Unable to load document versions.'));
         return;
       }
       setVersions((await response.json()) as DocumentVersion[]);
@@ -127,7 +129,7 @@ export default function DocumentsPage() {
       });
 
       if (!response.ok) {
-        setError('Unable to create document.');
+        setError(await readApiError(response, 'Unable to create document.'));
         return;
       }
 
@@ -164,7 +166,7 @@ export default function DocumentsPage() {
       });
 
       if (!uploadUrlResp.ok) {
-        setError('Unable to create upload URL.');
+        setError(await readApiError(uploadUrlResp, 'Unable to create upload URL.'));
         return;
       }
 
@@ -197,7 +199,7 @@ export default function DocumentsPage() {
       });
 
       if (!finalizeResp.ok) {
-        setError('Unable to finalize document version.');
+        setError(await readApiError(finalizeResp, 'Unable to finalize document version.'));
         return;
       }
 
@@ -219,7 +221,7 @@ export default function DocumentsPage() {
       });
 
       if (!response.ok) {
-        setError('Unable to create download URL.');
+        setError(await readApiError(response, 'Unable to create download URL.'));
         return;
       }
 
@@ -240,13 +242,19 @@ export default function DocumentsPage() {
       <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold">Create Document</h2>
         <form className="mt-4 grid gap-3 md:grid-cols-3" onSubmit={onCreateDocument}>
-          <input name="title" required placeholder="Title" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-          <input
-            name="category"
-            required
-            placeholder="Category (policy, offer, agreement)"
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          />
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Title</span>
+            <input name="title" required placeholder="Employee Handbook" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900" />
+          </label>
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Category</span>
+            <input
+              name="category"
+              required
+              placeholder="policy"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+            />
+          </label>
           <button className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800" type="submit">
             Create
           </button>

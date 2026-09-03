@@ -2,6 +2,8 @@
 
 import { FormEvent, useEffect, useState } from 'react';
 
+import { readApiError } from '../_utils/read-api-error';
+
 type Valuation = {
   id: string;
   valuationType: string;
@@ -40,7 +42,10 @@ export default function ValuationsReportsPage() {
       ]);
 
       if (!valuationsResp.ok || !capResp.ok) {
-        setError('Unable to load valuation/report data.');
+        const failure = !valuationsResp.ok
+          ? await readApiError(valuationsResp, 'Unable to load valuation/report data.')
+          : await readApiError(capResp, 'Unable to load valuation/report data.');
+        setError(failure);
         return;
       }
 
@@ -81,7 +86,7 @@ export default function ValuationsReportsPage() {
       });
 
       if (!response.ok) {
-        setError('Unable to create valuation.');
+        setError(await readApiError(response, 'Unable to create valuation.'));
         return;
       }
 
@@ -106,28 +111,40 @@ export default function ValuationsReportsPage() {
       <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold">Create Valuation</h2>
         <form className="mt-4 grid gap-3 md:grid-cols-4" onSubmit={onCreateValuation}>
-          <input
-            name="valuationType"
-            required
-            placeholder="409A"
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          />
-          <input
-            name="effectiveDate"
-            required
-            type="date"
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          />
-          <input
-            name="commonFmv"
-            placeholder="Common FMV"
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          />
-          <input
-            name="enterpriseValue"
-            placeholder="Enterprise value"
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          />
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Valuation Type</span>
+            <input
+              name="valuationType"
+              required
+              placeholder="409A"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+            />
+          </label>
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Effective Date</span>
+            <input
+              name="effectiveDate"
+              required
+              type="date"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+            />
+          </label>
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Common FMV</span>
+            <input
+              name="commonFmv"
+              placeholder="Optional"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+            />
+          </label>
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Enterprise Value</span>
+            <input
+              name="enterpriseValue"
+              placeholder="Optional"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+            />
+          </label>
           <button type="submit" className="md:col-span-4 rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800">
             Save Valuation
           </button>

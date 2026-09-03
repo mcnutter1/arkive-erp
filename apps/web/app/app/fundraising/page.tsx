@@ -2,6 +2,8 @@
 
 import { FormEvent, useEffect, useState } from 'react';
 
+import { readApiError } from '../_utils/read-api-error';
+
 type Round = {
   id: string;
   name: string;
@@ -36,7 +38,7 @@ export default function FundraisingPage() {
         credentials: 'include',
       });
       if (!response.ok) {
-        setError('Unable to load rounds.');
+        setError(await readApiError(response, 'Unable to load rounds.'));
         return;
       }
 
@@ -63,7 +65,7 @@ export default function FundraisingPage() {
         credentials: 'include',
       });
       if (!response.ok) {
-        setError('Unable to load scenarios.');
+        setError(await readApiError(response, 'Unable to load scenarios.'));
         return;
       }
       setScenarios((await response.json()) as Scenario[]);
@@ -101,7 +103,7 @@ export default function FundraisingPage() {
         }),
       });
       if (!response.ok) {
-        setError('Unable to create round.');
+        setError(await readApiError(response, 'Unable to create round.'));
         return;
       }
 
@@ -141,7 +143,7 @@ export default function FundraisingPage() {
       });
 
       if (!response.ok) {
-        setError('Unable to create scenario.');
+        setError(await readApiError(response, 'Unable to create scenario.'));
         return;
       }
 
@@ -161,7 +163,7 @@ export default function FundraisingPage() {
         credentials: 'include',
       });
       if (!response.ok) {
-        setError('Unable to simulate scenario.');
+        setError(await readApiError(response, 'Unable to simulate scenario.'));
         return;
       }
 
@@ -181,13 +183,22 @@ export default function FundraisingPage() {
       <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold">Create Round</h2>
         <form className="mt-4 grid gap-3 md:grid-cols-4" onSubmit={onCreateRound}>
-          <input name="name" required placeholder="Seed 2026" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-          <input name="stage" required placeholder="SEED" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-          <input
-            name="preMoney"
-            placeholder="Pre-money (optional)"
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          />
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Round Name</span>
+            <input name="name" required placeholder="Seed 2026" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900" />
+          </label>
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Stage</span>
+            <input name="stage" required placeholder="SEED" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900" />
+          </label>
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Pre-Money Value</span>
+            <input
+              name="preMoney"
+              placeholder="Optional"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+            />
+          </label>
           <button type="submit" className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800">
             Create
           </button>
@@ -219,24 +230,34 @@ export default function FundraisingPage() {
 
       <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold">Create Scenario</h2>
+        <p className="mt-1 text-sm text-slate-600">Attach financing assumptions to the selected round and run simulations.</p>
         <form className="mt-4 grid gap-3 md:grid-cols-4" onSubmit={onCreateScenario}>
-          <input name="name" required placeholder="Base Case" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-          <input
-            name="raiseAmount"
-            type="number"
-            step="0.01"
-            min="0"
-            placeholder="Raise amount"
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          />
-          <input
-            name="scenarioPreMoney"
-            type="number"
-            step="0.01"
-            min="0"
-            placeholder="Pre-money"
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          />
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Scenario Name</span>
+            <input name="name" required placeholder="Base Case" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900" />
+          </label>
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Raise Amount</span>
+            <input
+              name="raiseAmount"
+              type="number"
+              step="0.01"
+              min="0"
+              placeholder="2500000"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+            />
+          </label>
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Scenario Pre-Money</span>
+            <input
+              name="scenarioPreMoney"
+              type="number"
+              step="0.01"
+              min="0"
+              placeholder="12000000"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+            />
+          </label>
           <button
             type="submit"
             disabled={!selectedRoundId}

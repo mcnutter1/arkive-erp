@@ -2,6 +2,8 @@
 
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 
+import { readApiError } from '../_utils/read-api-error';
+
 type Setting = {
   id: string;
   section: string;
@@ -157,7 +159,7 @@ export default function AdminSettingsPage() {
   async function listSection(section: string): Promise<Setting[]> {
     const response = await fetch(`${apiBaseUrl}/admin/settings/${section}`, { credentials: 'include' });
     if (!response.ok) {
-      throw new Error(`Unable to load ${section} settings.`);
+      throw new Error(await readApiError(response, `Unable to load ${section} settings.`));
     }
     return (await response.json()) as Setting[];
   }
@@ -176,7 +178,7 @@ export default function AdminSettingsPage() {
       ]);
 
       if (!peopleResp.ok) {
-        setError('Unable to load people for signatory selection.');
+        setError(await readApiError(peopleResp, 'Unable to load people for signatory selection.'));
         return;
       }
 
@@ -206,7 +208,7 @@ export default function AdminSettingsPage() {
     });
 
     if (!response.ok) {
-      throw new Error('Unable to save setting.');
+      throw new Error(await readApiError(response, 'Unable to save setting.'));
     }
   }
 
@@ -219,8 +221,8 @@ export default function AdminSettingsPage() {
       await upsertSetting('integrations', 'm365', m365 as unknown as Record<string, unknown>);
       setNotice('M365 settings saved.');
       await loadSettings();
-    } catch {
-      setError('Unable to save M365 settings.');
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Unable to save M365 settings.');
     }
   }
 
@@ -233,8 +235,8 @@ export default function AdminSettingsPage() {
       await upsertSetting('integrations', 'awsSes', awsSes as unknown as Record<string, unknown>);
       setNotice('AWS SES settings saved.');
       await loadSettings();
-    } catch {
-      setError('Unable to save AWS SES settings.');
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Unable to save AWS SES settings.');
     }
   }
 
@@ -247,8 +249,8 @@ export default function AdminSettingsPage() {
       await upsertSetting('integrations', 'esign', esign as unknown as Record<string, unknown>);
       setNotice('E-sign settings saved.');
       await loadSettings();
-    } catch {
-      setError('Unable to save e-sign settings.');
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Unable to save e-sign settings.');
     }
   }
 
@@ -272,8 +274,8 @@ export default function AdminSettingsPage() {
 
       setNotice('Grant letter settings saved.');
       await loadSettings();
-    } catch {
-      setError('Unable to save grant letter settings.');
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Unable to save grant letter settings.');
     }
   }
 

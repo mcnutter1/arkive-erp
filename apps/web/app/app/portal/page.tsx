@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react';
 
+import { readApiError } from '../_utils/read-api-error';
+
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? '/api/v1';
 
 export default function PortalPage() {
@@ -14,7 +16,7 @@ export default function PortalPage() {
       try {
         const response = await fetch(`${apiBaseUrl}/portal/me`, { credentials: 'include' });
         if (!response.ok) {
-          setError('Unable to load portal summary.');
+          setError(await readApiError(response, 'Unable to load portal summary.'));
           return;
         }
         setData((await response.json()) as Record<string, unknown>);

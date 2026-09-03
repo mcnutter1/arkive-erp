@@ -2,6 +2,8 @@
 
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 
+import { readApiError } from '../_utils/read-api-error';
+
 type Task = {
   id: string;
   title: string;
@@ -57,7 +59,7 @@ export default function TasksPage() {
       });
 
       if (!response.ok) {
-        setError('Unable to load tasks.');
+        setError(await readApiError(response, 'Unable to load tasks.'));
         return;
       }
 
@@ -99,7 +101,7 @@ export default function TasksPage() {
       });
 
       if (!response.ok) {
-        setError('Unable to create task.');
+        setError(await readApiError(response, 'Unable to create task.'));
         return;
       }
 
@@ -122,22 +124,31 @@ export default function TasksPage() {
       <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold">Create Task</h2>
         <form className="mt-4 grid gap-3 md:grid-cols-2" onSubmit={onCreateTask}>
-          <input
-            name="title"
-            required
-            placeholder="Task title"
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          />
-          <input
-            name="dueAt"
-            type="datetime-local"
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          />
-          <textarea
-            name="description"
-            placeholder="Description"
-            className="md:col-span-2 min-h-24 rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          />
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Task Title</span>
+            <input
+              name="title"
+              required
+              placeholder="Prepare monthly payroll report"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+            />
+          </label>
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Due Date & Time</span>
+            <input
+              name="dueAt"
+              type="datetime-local"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+            />
+          </label>
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500 md:col-span-2">
+            <span>Description</span>
+            <textarea
+              name="description"
+              placeholder="Add context, owners, and expected outcome"
+              className="min-h-24 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+            />
+          </label>
           <button
             type="submit"
             disabled={saving}

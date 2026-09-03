@@ -134,11 +134,6 @@ async function readApiError(response: Response, fallback: string): Promise<strin
     }
 
     if (payload.error && typeof payload.error === 'object') {
-      const nestedMessage = payload.error.message;
-      if (typeof nestedMessage === 'string' && nestedMessage.trim()) {
-        return nestedMessage;
-      }
-
       const details = payload.error.details as
         | string
         | { message?: string | string[] }
@@ -153,6 +148,14 @@ async function readApiError(response: Response, fallback: string): Promise<strin
         if (typeof details.message === 'string' && details.message.trim()) {
           return details.message;
         }
+      }
+
+      const nestedMessage = payload.error.message;
+      if (typeof nestedMessage === 'string' && nestedMessage.trim()) {
+        if (nestedMessage === 'Request failed' || nestedMessage === 'Internal server error') {
+          return fallback;
+        }
+        return nestedMessage;
       }
     }
   } catch {
@@ -197,6 +200,8 @@ export default function EquityPage() {
   const [savingTxn, setSavingTxn] = useState(false);
   const [savingPlan, setSavingPlan] = useState(false);
   const [savingCapTableBase, setSavingCapTableBase] = useState(false);
+  const [savingOpeningBalance, setSavingOpeningBalance] = useState(false);
+  const [capTableLoadError, setCapTableLoadError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [grantAwardType, setGrantAwardType] = useState<'OPTION_ISO' | 'OPTION_NSO' | 'RSU'>('OPTION_NSO');
@@ -206,6 +211,7 @@ export default function EquityPage() {
   async function loadData() {
     setLoading(true);
     setError(null);
+    setCapTableLoadError(null);
 
     try {
       const [peopleResp, plansResp, grantsResp, ledgerResp, dashboardResp, capTableResp] = await Promise.all([
@@ -237,10 +243,6 @@ export default function EquityPage() {
         setError(await readApiError(dashboardResp, 'Unable to load equity dashboard.'));
         return;
       }
-      if (!capTableResp.ok) {
-        setError(await readApiError(capTableResp, 'Unable to load cap table.'));
-        return;
-      }
 
       const peoplePayload = (await peopleResp.json()) as PeopleResponse;
       setPeople(peoplePayload.data);
@@ -248,7 +250,13 @@ export default function EquityPage() {
       setGrants((await grantsResp.json()) as GrantAward[]);
       setTxns((await ledgerResp.json()) as EquityTxn[]);
       setDashboard((await dashboardResp.json()) as DashboardResponse);
-      setCapTable((await capTableResp.json()) as CapTableResponse);
+
+      if (capTableResp.ok) {
+        setCapTable((await capTableResp.json()) as CapTableResponse);
+      } else {
+        setCapTable(null);
+        setCapTableLoadError(await readApiError(capTableResp, 'Cap table service is unavailable right now.'));
+      }
     } catch {
       setError('Unable to load equity workspace.');
     } finally {
@@ -277,6 +285,12 @@ export default function EquityPage() {
 
     if (!quantity || !isDecimalLike(quantity)) {
       setError('Grant quantity must be a valid positive number (e.g. 25000 or 25000.5).');
+      setSavingGrant(false);
+      return;
+    }
+
+    if (Number(quantity) <= 0) {
+      setError('Grant quantity must be greater than zero.');
       setSavingGrant(false);
       return;
     }
@@ -417,6 +431,72 @@ export default function EquityPage() {
     }
   }
 
+  async function onRecordOpeningBalance(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSavingOpeningBalance(true);
+    setError(null);
+    setNotice(null);
+
+    const form = new FormData(event.currentTarget);
+    const personId = String(form.get('personId') ?? '').trim();
+    const quantity = normalizeNumericInput(String(form.get('quantity') ?? ''));
+    const effectiveDate = String(form.get('effectiveDate') ?? '').trim();
+    const reason = String(form.get('reason') ?? '').trim();
+
+    if (!personId) {
+      setError('Select a holder for the opening balance.');
+      setSavingOpeningBalance(false);
+      return;
+    }
+
+    if (!quantity || !isDecimalLike(quantity)) {
+      setError('Opening balance quantity must be a valid positive number.');
+      setSavingOpeningBalance(false);
+      return;
+    }
+
+    if (Number(quantity) <= 0) {
+      setError('Opening balance quantity must be greater than zero.');
+      setSavingOpeningBalance(false);
+      return;
+    }
+
+    const effectiveAt = toDayStartIso(effectiveDate);
+    if (!effectiveAt) {
+      setError('Opening balance date is invalid. Use YYYY-MM-DD.');
+      setSavingOpeningBalance(false);
+      return;
+    }
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/equity/ledger`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'ISSUE',
+          effectiveAt,
+          quantity,
+          toPersonId: personId,
+          reason: reason || 'Opening cap table balance',
+        }),
+      });
+
+      if (!response.ok) {
+        setError(await readApiError(response, 'Unable to record opening balance.'));
+        return;
+      }
+
+      event.currentTarget.reset();
+      setNotice('Opening balance recorded. Cap table has been updated.');
+      await loadData();
+    } catch {
+      setError('Unable to record opening balance.');
+    } finally {
+      setSavingOpeningBalance(false);
+    }
+  }
+
   async function onCreateManualTxn(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSavingTxn(true);
@@ -518,6 +598,24 @@ export default function EquityPage() {
     return `${person.legalFirstName} ${person.legalLastName}`;
   }
 
+  const capTableView: CapTableResponse = capTable ?? {
+    generatedAt: new Date(0).toISOString(),
+    shares: {
+      baseOutstandingShares: '0.000000',
+      authorizedShares: '0.000000',
+      outstandingOptions: '0.000000',
+      outstandingRsus: '0.000000',
+      equityInstrumentsOutstanding: '0.000000',
+      fullyDilutedShares: '0.000000',
+    },
+    optionPool: {
+      reservedShares: '0.000000',
+      grantedShares: '0.000000',
+      remainingShares: '0.000000',
+    },
+    holders: [],
+  };
+
   return (
     <section className="space-y-5">
       <header className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -554,94 +652,156 @@ export default function EquityPage() {
           Define your base outstanding shares and monitor option-pool utilization plus holder-level outstanding balances.
         </p>
 
-        {capTable ? (
-          <>
-            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <p className="text-xs uppercase tracking-wide text-slate-500">Base Outstanding Shares</p>
-                <p className="mt-1 text-lg font-semibold text-slate-900">{capTable.shares.baseOutstandingShares}</p>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <p className="text-xs uppercase tracking-wide text-slate-500">Outstanding Equity Instruments</p>
-                <p className="mt-1 text-lg font-semibold text-slate-900">{capTable.shares.equityInstrumentsOutstanding}</p>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <p className="text-xs uppercase tracking-wide text-slate-500">Fully Diluted Shares</p>
-                <p className="mt-1 text-lg font-semibold text-slate-900">{capTable.shares.fullyDilutedShares}</p>
-              </div>
-            </div>
+        {capTableLoadError ? (
+          <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            Cap table read is unavailable: {capTableLoadError}
+          </p>
+        ) : null}
 
-            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              <div className="rounded-xl border border-slate-200 p-3">
-                <p className="text-xs uppercase tracking-wide text-slate-500">Authorized Shares</p>
-                <p className="mt-1 text-sm font-semibold text-slate-900">{capTable.shares.authorizedShares}</p>
-              </div>
-              <div className="rounded-xl border border-slate-200 p-3">
-                <p className="text-xs uppercase tracking-wide text-slate-500">Pool Reserved</p>
-                <p className="mt-1 text-sm font-semibold text-slate-900">{capTable.optionPool.reservedShares}</p>
-              </div>
-              <div className="rounded-xl border border-slate-200 p-3">
-                <p className="text-xs uppercase tracking-wide text-slate-500">Pool Granted</p>
-                <p className="mt-1 text-sm font-semibold text-slate-900">{capTable.optionPool.grantedShares}</p>
-              </div>
-              <div className="rounded-xl border border-slate-200 p-3">
-                <p className="text-xs uppercase tracking-wide text-slate-500">Pool Remaining</p>
-                <p className="mt-1 text-sm font-semibold text-slate-900">{capTable.optionPool.remainingShares}</p>
-              </div>
-            </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <p className="text-xs uppercase tracking-wide text-slate-500">Base Outstanding Shares</p>
+            <p className="mt-1 text-lg font-semibold text-slate-900">{capTableView.shares.baseOutstandingShares}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <p className="text-xs uppercase tracking-wide text-slate-500">Outstanding Equity Instruments</p>
+            <p className="mt-1 text-lg font-semibold text-slate-900">{capTableView.shares.equityInstrumentsOutstanding}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <p className="text-xs uppercase tracking-wide text-slate-500">Fully Diluted Shares</p>
+            <p className="mt-1 text-lg font-semibold text-slate-900">{capTableView.shares.fullyDilutedShares}</p>
+          </div>
+        </div>
 
-            <form className="mt-4 grid gap-3 md:grid-cols-4" onSubmit={onUpdateCapTableBase}>
-              <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500 md:col-span-2">
-                <span>Set Base Outstanding Shares</span>
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-xl border border-slate-200 p-3">
+            <p className="text-xs uppercase tracking-wide text-slate-500">Authorized Shares</p>
+            <p className="mt-1 text-sm font-semibold text-slate-900">{capTableView.shares.authorizedShares}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 p-3">
+            <p className="text-xs uppercase tracking-wide text-slate-500">Pool Reserved</p>
+            <p className="mt-1 text-sm font-semibold text-slate-900">{capTableView.optionPool.reservedShares}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 p-3">
+            <p className="text-xs uppercase tracking-wide text-slate-500">Pool Granted</p>
+            <p className="mt-1 text-sm font-semibold text-slate-900">{capTableView.optionPool.grantedShares}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 p-3">
+            <p className="text-xs uppercase tracking-wide text-slate-500">Pool Remaining</p>
+            <p className="mt-1 text-sm font-semibold text-slate-900">{capTableView.optionPool.remainingShares}</p>
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-4 lg:grid-cols-2">
+          <form className="grid gap-3 rounded-xl border border-slate-200 p-4" onSubmit={onUpdateCapTableBase}>
+            <h3 className="text-sm font-semibold text-slate-900">Step 1: Set Base Outstanding Shares</h3>
+            <p className="text-xs text-slate-600">This is your current common outstanding share count before option/RSU dilution.</p>
+            <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+              <span>Outstanding Shares</span>
+              <input
+                name="outstandingShares"
+                defaultValue={capTableView.shares.baseOutstandingShares}
+                placeholder="10000000"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+              />
+            </label>
+            <button
+              type="submit"
+              disabled={savingCapTableBase}
+              className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:opacity-60"
+            >
+              {savingCapTableBase ? 'Saving...' : 'Update Share Base'}
+            </button>
+          </form>
+
+          <form className="grid gap-3 rounded-xl border border-slate-200 p-4" onSubmit={onRecordOpeningBalance}>
+            <h3 className="text-sm font-semibold text-slate-900">Step 2: Add Opening Holder Balance</h3>
+            <p className="text-xs text-slate-600">Create initial holder balances so the cap table starts with real data.</p>
+            <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+              <span>Holder</span>
+              <select
+                name="personId"
+                required
+                defaultValue=""
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+              >
+                <option value="" disabled>
+                  Select holder
+                </option>
+                {people.map((person) => (
+                  <option key={person.id} value={person.id}>
+                    {person.legalFirstName} {person.legalLastName}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+                <span>Quantity</span>
                 <input
-                  name="outstandingShares"
-                  defaultValue={capTable.shares.baseOutstandingShares}
-                  placeholder="10000000"
+                  name="quantity"
+                  required
+                  placeholder="500000"
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
                 />
               </label>
-              <div className="md:col-span-2 flex items-end">
-                <button
-                  type="submit"
-                  disabled={savingCapTableBase}
-                  className="w-full rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:opacity-60"
-                >
-                  {savingCapTableBase ? 'Saving...' : 'Update Share Base'}
-                </button>
-              </div>
-            </form>
-
-            <div className="mt-5">
-              <h3 className="text-sm font-semibold text-slate-900">Outstanding by Holder</h3>
-              {capTable.holders.length === 0 ? (
-                <p className="mt-2 text-sm text-slate-600">No holder balances recorded yet.</p>
-              ) : (
-                <div className="mt-2 overflow-x-auto">
-                  <table className="min-w-full text-left text-sm">
-                    <thead className="text-xs uppercase tracking-wide text-slate-500">
-                      <tr>
-                        <th className="pb-2 pr-4">Holder</th>
-                        <th className="pb-2 pr-4">Outstanding Quantity</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {capTable.holders.map((holder) => (
-                        <tr key={holder.personId} className="border-t border-slate-200">
-                          <td className="py-2 pr-4 font-medium text-slate-900">{holder.personName}</td>
-                          <td className="py-2 pr-4 text-slate-700">{holder.outstandingQuantity}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+              <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+                <span>Effective Date</span>
+                <input
+                  name="effectiveDate"
+                  type="date"
+                  required
+                  defaultValue={dateInputToday()}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+                />
+              </label>
             </div>
-          </>
-        ) : loading ? (
-          <p className="mt-4 text-sm text-slate-600">Loading cap table...</p>
-        ) : (
-          <p className="mt-4 text-sm text-slate-600">No cap-table data available yet.</p>
-        )}
+            <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+              <span>Reason</span>
+              <input
+                name="reason"
+                placeholder="Opening cap table balance"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+              />
+            </label>
+            <button
+              type="submit"
+              disabled={savingOpeningBalance || people.length === 0}
+              className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:opacity-60"
+            >
+              {savingOpeningBalance ? 'Saving...' : 'Record Opening Balance'}
+            </button>
+            {people.length === 0 ? (
+              <p className="text-xs text-slate-600">Create at least one person before recording holder balances.</p>
+            ) : null}
+          </form>
+        </div>
+
+        <div className="mt-5">
+          <h3 className="text-sm font-semibold text-slate-900">Outstanding by Holder</h3>
+          {capTableView.holders.length === 0 ? (
+            <p className="mt-2 text-sm text-slate-600">No holder balances recorded yet.</p>
+          ) : (
+            <div className="mt-2 overflow-x-auto">
+              <table className="min-w-full text-left text-sm">
+                <thead className="text-xs uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th className="pb-2 pr-4">Holder</th>
+                    <th className="pb-2 pr-4">Outstanding Quantity</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {capTableView.holders.map((holder) => (
+                    <tr key={holder.personId} className="border-t border-slate-200">
+                      <td className="py-2 pr-4 font-medium text-slate-900">{holder.personName}</td>
+                      <td className="py-2 pr-4 text-slate-700">{holder.outstandingQuantity}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </article>
 
       <div className="grid gap-5 xl:grid-cols-2">

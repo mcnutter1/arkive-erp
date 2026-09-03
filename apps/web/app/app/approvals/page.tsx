@@ -2,6 +2,8 @@
 
 import { FormEvent, useEffect, useState } from 'react';
 
+import { readApiError } from '../_utils/read-api-error';
+
 type Decision = {
   id: string;
   decision: string;
@@ -31,7 +33,7 @@ export default function ApprovalsPage() {
     try {
       const response = await fetch(`${apiBaseUrl}/approvals/requests`, { credentials: 'include' });
       if (!response.ok) {
-        setError('Unable to load approvals.');
+        setError(await readApiError(response, 'Unable to load approvals.'));
         return;
       }
       setItems((await response.json()) as Approval[]);
@@ -62,7 +64,7 @@ export default function ApprovalsPage() {
       });
 
       if (!response.ok) {
-        setError('Unable to create approval request.');
+        setError(await readApiError(response, 'Unable to create approval request.'));
         return;
       }
 
@@ -85,7 +87,7 @@ export default function ApprovalsPage() {
       });
 
       if (!response.ok) {
-        setError('Unable to submit decision. Actor must be linked to a person for approvals.');
+        setError(await readApiError(response, 'Unable to submit decision.'));
         return;
       }
 
@@ -105,9 +107,18 @@ export default function ApprovalsPage() {
       <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold">New Request</h2>
         <form className="mt-4 grid gap-3 md:grid-cols-4" onSubmit={onCreate}>
-          <input name="requestType" required placeholder="REQUEST_TYPE" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-          <input name="title" required placeholder="Title" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-          <input name="requiredCount" type="number" min="1" defaultValue="1" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Request Type</span>
+            <input name="requestType" required placeholder="PROCUREMENT" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900" />
+          </label>
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Title</span>
+            <input name="title" required placeholder="Approve equipment budget" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900" />
+          </label>
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Required Approvals</span>
+            <input name="requiredCount" type="number" min="1" defaultValue="1" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900" />
+          </label>
           <button className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800" type="submit">Create</button>
         </form>
       </article>

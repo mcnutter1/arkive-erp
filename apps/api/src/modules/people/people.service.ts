@@ -1,4 +1,4 @@
-import { Injectable, ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../common/prisma.service.js';
@@ -10,11 +10,29 @@ import { CreateEngagementDto, CreatePersonDto, PeopleQueryDto } from './dto.js';
 export class PeopleService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private parseOptionalDate(value: string | undefined, fieldName: string): Date | undefined {
+    const normalized = value?.trim();
+    if (!normalized) {
+      return undefined;
+    }
+
+    const parsed = new Date(normalized);
+    if (Number.isNaN(parsed.getTime())) {
+      throw new BadRequestException(`Invalid ${fieldName}`);
+    }
+
+    return parsed;
+  }
+
   private normalizePrismaError(error: unknown): never {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2021') {
       throw new ServiceUnavailableException(
         'Database schema is not initialized. Run scripts/update.sh to apply schema.',
       );
+    }
+
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') {
+      throw new BadRequestException('Engagement references an invalid person or related record');
     }
 
     throw error;
@@ -88,17 +106,43 @@ export class PeopleService {
   }
 
   async createEngagement(actor: AuthenticatedUser, dto: CreateEngagementDto) {
-    return this.prisma.engagement.create({
-      data: {
-        organizationId: actor.organizationId,
-        personId: dto.personId,
-        kind: dto.kind,
-        status: dto.status ?? 'DRAFT',
-        department: dto.department,
-        title: dto.title,
-        startDate: dto.startDate,
-        endDate: dto.endDate,
-      },
-    });
+    try {
+      const person = await this.prisma.person.findFirst({
+        where: {
+          id: dto.personId,
+          organizationId: actor.organizationId,
+          archivedAt: null,
+        },
+        select: {
+          id: true,
+        },
+      });
+
+      if (!person) {
+        throw new NotFoundException('Person not found for this organization');
+      }
+
+      const startDate = this.parseOptionalDate(dto.startDate, 'start date');
+      const endDate = this.parseOptionalDate(dto.endDate, 'end date');
+
+      if (startDate && endDate && endDate.getTime() < startDate.getTime()) {
+        throw new BadRequestException('End date cannot be earlier than start date');
+      }
+
+      return await this.prisma.engagement.create({
+        data: {
+          organizationId: actor.organizationId,
+          personId: dto.personId,
+          kind: dto.kind,
+          status: dto.status ?? 'DRAFT',
+          department: dto.department,
+          title: dto.title,
+          startDate,
+          endDate,
+        },
+      });
+    } catch (error) {
+      this.normalizePrismaError(error);
+    }
   }
 }

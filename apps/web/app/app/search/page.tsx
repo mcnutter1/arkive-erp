@@ -2,6 +2,8 @@
 
 import { FormEvent, useState } from 'react';
 
+import { readApiError } from '../_utils/read-api-error';
+
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? '/api/v1';
 
 export default function SearchPage() {
@@ -21,7 +23,7 @@ export default function SearchPage() {
         credentials: 'include',
       });
       if (!response.ok) {
-        setError('Unable to run global search.');
+        setError(await readApiError(response, 'Unable to run global search.'));
         return;
       }
       setGlobalResult((await response.json()) as Record<string, unknown>);
@@ -39,7 +41,7 @@ export default function SearchPage() {
         credentials: 'include',
       });
       if (!response.ok) {
-        setError('Unable to load timeline.');
+        setError(await readApiError(response, 'Unable to load timeline.'));
         return;
       }
       setTimelineResult((await response.json()) as Record<string, unknown>[]);
@@ -58,7 +60,7 @@ export default function SearchPage() {
       <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold">Global Search</h2>
         <form className="mt-4 flex gap-2" onSubmit={onGlobalSearch}>
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search text" className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by name, email, document title, or task" className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
           <button type="submit" className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800">Search</button>
         </form>
         {globalResult ? (
@@ -68,9 +70,17 @@ export default function SearchPage() {
 
       <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold">Activity Timeline</h2>
+        <p className="mt-1 text-sm text-slate-600">Select target type and the target record ID to inspect chronological activity.</p>
         <form className="mt-4 grid gap-3 md:grid-cols-3" onSubmit={onTimeline}>
-          <input value={targetType} onChange={(e) => setTargetType(e.target.value)} placeholder="Target type" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-          <input value={targetId} onChange={(e) => setTargetId(e.target.value)} required placeholder="Target UUID" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          <select value={targetType} onChange={(e) => setTargetType(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+            <option value="document">document</option>
+            <option value="person">person</option>
+            <option value="engagement">engagement</option>
+            <option value="task">task</option>
+            <option value="grant">grant</option>
+            <option value="approval">approval</option>
+          </select>
+          <input value={targetId} onChange={(e) => setTargetId(e.target.value)} required placeholder="Target record ID" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
           <button type="submit" className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800">Load Timeline</button>
         </form>
         {timelineResult ? (

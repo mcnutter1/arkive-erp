@@ -21,6 +21,24 @@ const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? '/api/v1';
 const engagementKinds = ['EMPLOYEE', 'CONTRACTOR', 'ADVISOR', 'DIRECTOR', 'INTERN', 'CONSULTANT', 'OTHER'];
 const engagementStatuses = ['DRAFT', 'PREBOARDING', 'ACTIVE', 'PAUSED', 'OFFBOARDING', 'TERMINATED', 'ALUMNI'];
 
+function toDayStartIso(dateInput: string): string | undefined {
+  const trimmed = dateInput.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    return undefined;
+  }
+
+  const parsed = new Date(`${trimmed}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime())) {
+    return undefined;
+  }
+
+  return parsed.toISOString();
+}
+
 async function readApiError(response: Response, fallback: string): Promise<string> {
   try {
     const payload = (await response.json()) as
@@ -52,11 +70,6 @@ async function readApiError(response: Response, fallback: string): Promise<strin
     }
 
     if (payload.error && typeof payload.error === 'object') {
-      const nestedMessage = payload.error.message;
-      if (typeof nestedMessage === 'string' && nestedMessage.trim()) {
-        return nestedMessage;
-      }
-
       const details = payload.error.details as
         | string
         | { message?: string | string[] }
@@ -71,6 +84,14 @@ async function readApiError(response: Response, fallback: string): Promise<strin
         if (typeof details.message === 'string' && details.message.trim()) {
           return details.message;
         }
+      }
+
+      const nestedMessage = payload.error.message;
+      if (typeof nestedMessage === 'string' && nestedMessage.trim()) {
+        if (nestedMessage === 'Request failed' || nestedMessage === 'Internal server error') {
+          return fallback;
+        }
+        return nestedMessage;
       }
     }
   } catch {
@@ -179,6 +200,27 @@ export default function PeoplePage() {
     const department = String(form.get('department') ?? '').trim();
     const title = String(form.get('title') ?? '').trim();
     const startDate = String(form.get('startDate') ?? '').trim();
+    const endDate = String(form.get('endDate') ?? '').trim();
+    const startDateIso = toDayStartIso(startDate);
+    const endDateIso = toDayStartIso(endDate);
+
+    if (startDate && !startDateIso) {
+      setError('Start date is invalid. Use YYYY-MM-DD.');
+      setSavingEngagement(false);
+      return;
+    }
+
+    if (endDate && !endDateIso) {
+      setError('End date is invalid. Use YYYY-MM-DD.');
+      setSavingEngagement(false);
+      return;
+    }
+
+    if (startDateIso && endDateIso && new Date(endDateIso).getTime() < new Date(startDateIso).getTime()) {
+      setError('End date cannot be earlier than start date.');
+      setSavingEngagement(false);
+      return;
+    }
 
     try {
       const response = await fetch(`${apiBaseUrl}/people/engagements`, {
@@ -193,7 +235,8 @@ export default function PeoplePage() {
           status,
           department: department || undefined,
           title: title || undefined,
-          startDate: startDate || undefined,
+          startDate: startDateIso,
+          endDate: endDateIso,
         }),
       });
 
@@ -297,6 +340,7 @@ export default function PeoplePage() {
             <input name="department" placeholder="Department" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
             <input name="title" placeholder="Title" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
             <input name="startDate" type="date" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+            <input name="endDate" type="date" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
 
             <button
               type="submit"
