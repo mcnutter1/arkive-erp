@@ -240,7 +240,8 @@ export default function PeoplePage() {
       if (candidate && payload.data.some((person) => person.id === candidate)) {
         setSelectedPersonId(candidate);
       } else {
-        setSelectedPersonId(payload.data[0].id);
+        const firstPerson = payload.data[0];
+        setSelectedPersonId(firstPerson ? firstPerson.id : '');
       }
     } catch {
       setError('Unable to load people.');
