@@ -267,8 +267,9 @@ if [[ ! -f "$ENV_FILE" ]]; then
   echo "[install] created .env from template"
 fi
 
-ensure_env_var "COMPOSE_PROJECT_NAME" "arkive"
+ensure_env_var "COMPOSE_PROJECT_NAME" "arkive-erp"
 ensure_env_var "ARKIVE_DATA_ROOT" "$DEFAULT_DATA_ROOT"
+ensure_env_var "ARKIVE_GIT_REPO_URL" "https://github.com/mcnutter1/arkive-erp.git"
 
 ARKIVE_DATA_ROOT="$(get_env_var "ARKIVE_DATA_ROOT")"
 if [[ -z "$ARKIVE_DATA_ROOT" ]]; then

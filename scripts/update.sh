@@ -20,6 +20,8 @@ fi
 
 DATA_ROOT="${ARKIVE_DATA_ROOT:-/opt/arkive}"
 LOCK_FILE="$DATA_ROOT/runtime/deploy.lock"
+CURRENT_COMPOSE_PROJECT="${COMPOSE_PROJECT_NAME:-arkive-erp}"
+PROJECT_GUARD_FILE="$DATA_ROOT/runtime/compose-project-name"
 
 if ! command -v git >/dev/null 2>&1; then
   echo "Missing required command: git" >&2
@@ -49,6 +51,18 @@ exec 9>"$LOCK_FILE"
 if ! flock -n 9; then
   echo "Another deployment is in progress." >&2
   exit 1
+fi
+
+if [[ -f "$PROJECT_GUARD_FILE" ]]; then
+  PREVIOUS_COMPOSE_PROJECT="$(tr -d '[:space:]' < "$PROJECT_GUARD_FILE")"
+  if [[ -n "$PREVIOUS_COMPOSE_PROJECT" && "$PREVIOUS_COMPOSE_PROJECT" != "$CURRENT_COMPOSE_PROJECT" ]]; then
+    echo "COMPOSE_PROJECT_NAME changed since last successful deploy." >&2
+    echo "Previous: $PREVIOUS_COMPOSE_PROJECT" >&2
+    echo "Current:  $CURRENT_COMPOSE_PROJECT" >&2
+    echo "Aborting to prevent accidental volume namespace switch and data split." >&2
+    echo "If intentional, set COMPOSE_PROJECT_NAME back, migrate data manually, then rerun." >&2
+    exit 1
+  fi
 fi
 
 avail_kb=$(df -k "$DATA_ROOT" | awk 'NR==2 {print $4}')
@@ -99,4 +113,5 @@ scripts/health-check.sh
 
 DEPLOY_SHA="$(git rev-parse --short HEAD)"
 echo "$BRANCH_NAME@$DEPLOY_SHA $(date -u +%FT%TZ) success" >> "$DATA_ROOT/runtime/deploy-history.log"
+printf '%s\n' "$CURRENT_COMPOSE_PROJECT" > "$PROJECT_GUARD_FILE"
 echo "Update complete: $BRANCH_NAME@$DEPLOY_SHA"

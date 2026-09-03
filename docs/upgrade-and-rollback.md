@@ -15,10 +15,11 @@ Operational runtime files are written under `ARKIVE_DATA_ROOT` (default `/opt/ar
 
 Behavior:
 
-- Requires explicit tag
+- Pulls latest commit from GitHub remote
 - Blocks dirty working tree unless override set
 - Acquires deployment lock
 - Runs pre-deploy backup
+- Aborts if `COMPOSE_PROJECT_NAME` changes from last successful deploy
 - Rebuilds containers and runs migration
 - Runs health checks
 
