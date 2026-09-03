@@ -1,11 +1,18 @@
-import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 
 import { AuthGuard } from '../auth/auth.guard.js';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import { AuthenticatedUser } from '../auth/auth.types.js';
 import { RequirePermissions } from '../authorization/permissions.decorator.js';
 import { PermissionsGuard } from '../authorization/permissions.guard.js';
-import { CreateEquityPlanDto, CreateEquityTransactionDto, CreateGrantAwardDto, UpdateCapTableBaseDto } from './dto.js';
+import {
+  CreateEquityPlanDto,
+  CreateEquityTransactionDto,
+  CreateGrantAwardDto,
+  UpdateCapTableBaseDto,
+  UpdateEquityPlanDto,
+  UpdateGrantAwardDto,
+} from './dto.js';
 import { EquityService } from './equity.service.js';
 
 @Controller({ path: 'equity', version: '1' })
@@ -71,6 +78,22 @@ export class EquityController {
     return this.equityService.createGrant(actor, dto);
   }
 
+  @Patch('grants/:grantId')
+  @RequirePermissions('equity.write')
+  updateGrant(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('grantId') grantId: string,
+    @Body() dto: UpdateGrantAwardDto,
+  ) {
+    return this.equityService.updateGrant(actor, grantId, dto);
+  }
+
+  @Delete('grants/:grantId')
+  @RequirePermissions('equity.write')
+  deleteGrant(@CurrentUser() actor: AuthenticatedUser, @Param('grantId') grantId: string) {
+    return this.equityService.deleteGrant(actor, grantId);
+  }
+
   @Get('plans')
   @RequirePermissions('equity.read')
   listPlans(@CurrentUser() actor: AuthenticatedUser) {
@@ -81,5 +104,15 @@ export class EquityController {
   @RequirePermissions('equity.write')
   createPlan(@CurrentUser() actor: AuthenticatedUser, @Body() dto: CreateEquityPlanDto) {
     return this.equityService.createPlan(actor, dto);
+  }
+
+  @Patch('plans/:planId')
+  @RequirePermissions('equity.write')
+  updatePlan(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('planId') planId: string,
+    @Body() dto: UpdateEquityPlanDto,
+  ) {
+    return this.equityService.updatePlan(actor, planId, dto);
   }
 }

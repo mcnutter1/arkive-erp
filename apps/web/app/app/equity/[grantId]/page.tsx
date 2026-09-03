@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 
+import { readApiError } from '../../_utils/read-api-error';
+
 type GrantDetailResponse = {
   grant: {
     id: string;
@@ -97,63 +99,20 @@ type PeopleResponse = {
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? '/api/v1';
 
-async function readApiError(response: Response, fallback: string): Promise<string> {
-  try {
-    const payload = (await response.json()) as
-      | {
-          message?: string | string[];
-          error?:
-            | string
-            | {
-                message?: string;
-                details?: unknown;
-              };
-        }
-      | undefined;
-
-    if (!payload) {
-      return fallback;
-    }
-
-    if (Array.isArray(payload.message) && payload.message.length > 0) {
-      return payload.message.join(', ');
-    }
-
-    if (typeof payload.message === 'string' && payload.message.trim()) {
-      return payload.message;
-    }
-
-    if (typeof payload.error === 'string' && payload.error.trim()) {
-      return payload.error;
-    }
-
-    if (payload.error && typeof payload.error === 'object') {
-      const nestedMessage = payload.error.message;
-      if (typeof nestedMessage === 'string' && nestedMessage.trim()) {
-        return nestedMessage;
-      }
-
-      const details = payload.error.details as
-        | string
-        | { message?: string | string[] }
-        | undefined;
-      if (typeof details === 'string' && details.trim()) {
-        return details;
-      }
-      if (details && typeof details === 'object') {
-        if (Array.isArray(details.message) && details.message.length > 0) {
-          return details.message.join(', ');
-        }
-        if (typeof details.message === 'string' && details.message.trim()) {
-          return details.message;
-        }
-      }
-    }
-  } catch {
-    // Ignore and use fallback.
+function formatShares(value: string | null | undefined): string {
+  if (!value) {
+    return '0';
   }
 
-  return fallback;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return value;
+  }
+
+  return parsed.toLocaleString(undefined, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  });
 }
 
 async function sha256HexBlob(blob: Blob): Promise<string> {
@@ -530,20 +489,20 @@ export default function GrantDetailPage() {
       <article className="grid gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:grid-cols-2 xl:grid-cols-4">
         <div>
           <p className="text-xs uppercase tracking-wide text-slate-500">Granted</p>
-          <p className="mt-2 text-2xl font-semibold text-slate-900">{detail.grant.quantity}</p>
+          <p className="mt-2 text-2xl font-semibold text-slate-900">{formatShares(detail.grant.quantity)}</p>
         </div>
         <div>
           <p className="text-xs uppercase tracking-wide text-slate-500">Exercised</p>
-          <p className="mt-2 text-2xl font-semibold text-slate-900">{detail.exercisedQuantity}</p>
+          <p className="mt-2 text-2xl font-semibold text-slate-900">{formatShares(detail.exercisedQuantity)}</p>
         </div>
         <div>
           <p className="text-xs uppercase tracking-wide text-slate-500">Remaining</p>
-          <p className="mt-2 text-2xl font-semibold text-slate-900">{detail.remainingQuantity}</p>
+          <p className="mt-2 text-2xl font-semibold text-slate-900">{formatShares(detail.remainingQuantity)}</p>
         </div>
         <div>
           <p className="text-xs uppercase tracking-wide text-slate-500">Exercise Price</p>
           <p className="mt-2 text-2xl font-semibold text-slate-900">
-            {detail.grant.exercisePrice ? `${detail.grant.exercisePrice} ${detail.grant.currency}` : 'N/A'}
+            {detail.grant.exercisePrice ? `${formatShares(detail.grant.exercisePrice)} ${detail.grant.currency}` : 'N/A'}
           </p>
         </div>
       </article>
@@ -570,11 +529,11 @@ export default function GrantDetailPage() {
             <div className="mt-4 grid gap-3 md:grid-cols-2">
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                 <p className="text-xs uppercase tracking-wide text-slate-500">Vested</p>
-                <p className="mt-1 text-lg font-semibold text-slate-900">{detail.vestingPreview.vestedQuantity}</p>
+                <p className="mt-1 text-lg font-semibold text-slate-900">{formatShares(detail.vestingPreview.vestedQuantity)}</p>
               </div>
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                 <p className="text-xs uppercase tracking-wide text-slate-500">Unvested</p>
-                <p className="mt-1 text-lg font-semibold text-slate-900">{detail.vestingPreview.unvestedQuantity}</p>
+                <p className="mt-1 text-lg font-semibold text-slate-900">{formatShares(detail.vestingPreview.unvestedQuantity)}</p>
               </div>
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 md:col-span-2">
                 <p className="text-xs uppercase tracking-wide text-slate-500">Intervals</p>
@@ -611,7 +570,7 @@ export default function GrantDetailPage() {
             ) : (
               detail.grant.exerciseRequests.map((request) => (
                 <div key={request.id} className="rounded-lg border border-slate-200 p-3">
-                  <p className="text-sm font-medium text-slate-900">{request.quantity} · {request.status}</p>
+                  <p className="text-sm font-medium text-slate-900">{formatShares(request.quantity)} · {request.status}</p>
                   <p className="text-xs text-slate-500">Requested {new Date(request.requestedAt).toLocaleString()}</p>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {request.status === 'SUBMITTED' ? (

@@ -5,7 +5,14 @@ import { Decimal } from 'decimal.js';
 import { AuthenticatedUser } from '../auth/auth.types.js';
 import { PrismaService } from '../common/prisma.service.js';
 import { VestingService } from '../vesting/vesting.service.js';
-import { CreateEquityPlanDto, CreateEquityTransactionDto, CreateGrantAwardDto, UpdateCapTableBaseDto } from './dto.js';
+import {
+  CreateEquityPlanDto,
+  CreateEquityTransactionDto,
+  CreateGrantAwardDto,
+  UpdateCapTableBaseDto,
+  UpdateEquityPlanDto,
+  UpdateGrantAwardDto,
+} from './dto.js';
 
 @Injectable()
 export class EquityService {
@@ -157,6 +164,73 @@ export class EquityService {
     }
   }
 
+  private async ensurePlanInOrg(organizationId: string, planId: string): Promise<void> {
+    const plan = await this.prisma.equityPlan.findFirst({
+      where: {
+        id: planId,
+        organizationId,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!plan) {
+      throw new NotFoundException('Equity plan not found for this organization');
+    }
+  }
+
+  private async assertPlanCapacity(
+    tx: Prisma.TransactionClient,
+    organizationId: string,
+    planId: string,
+    requiredQuantity: Decimal,
+    excludeGrantId?: string,
+  ): Promise<void> {
+    const plan = await tx.equityPlan.findFirst({
+      where: {
+        id: planId,
+        organizationId,
+      },
+      select: {
+        id: true,
+        code: true,
+        reservedShares: true,
+      },
+    });
+
+    if (!plan) {
+      throw new NotFoundException('Equity plan not found for this organization');
+    }
+
+    const granted = await tx.grantAward.aggregate({
+      where: {
+        organizationId,
+        planId,
+        ...(excludeGrantId
+          ? {
+              id: {
+                not: excludeGrantId,
+              },
+            }
+          : {}),
+      },
+      _sum: {
+        quantity: true,
+      },
+    });
+
+    const alreadyGranted = this.decimal(granted._sum.quantity);
+    const remaining = new Decimal(plan.reservedShares).sub(alreadyGranted);
+    if (remaining.lt(requiredQuantity)) {
+      throw new BadRequestException(`Plan ${plan.code} has insufficient remaining reserve for this grant`);
+    }
+  }
+
+  private renderDecimal(value: Decimal | string | number | null | undefined): string {
+    return this.decimal(value).toFixed(2);
+  }
+
   private async nextLedgerSequence(organizationId: string): Promise<bigint> {
     const seq = await this.prisma.equityTransaction.aggregate({
       where: { organizationId },
@@ -238,8 +312,8 @@ export class EquityService {
 
       return {
         ...plan,
-        grantedShares: granted.toFixed(6),
-        remainingShares: remaining.toFixed(6),
+        grantedShares: this.renderDecimal(granted),
+        remainingShares: this.renderDecimal(remaining),
       };
     });
   }
@@ -373,8 +447,8 @@ export class EquityService {
     return {
       grant,
       vestingPreview,
-      exercisedQuantity: exercisedQuantity.toFixed(6),
-      remainingQuantity: remainingQuantity.toFixed(6),
+      exercisedQuantity: this.renderDecimal(exercisedQuantity),
+      remainingQuantity: this.renderDecimal(remainingQuantity),
     };
   }
 
@@ -498,7 +572,7 @@ export class EquityService {
         date: grant.grantDate ?? grant.createdAt,
         type: 'GRANT',
         title: `${grant.awardType} grant issued`,
-        subtitle: `${personName} · ${new Decimal(grant.quantity).toFixed(6)} units`,
+        subtitle: `${personName} · ${this.renderDecimal(grant.quantity)} units`,
       });
     });
 
@@ -509,7 +583,7 @@ export class EquityService {
         date: exercise.completedAt ?? exercise.requestedAt,
         type: 'EXERCISE',
         title: `Exercise ${status.toLowerCase()}`,
-        subtitle: `${personName} · ${new Decimal(exercise.quantity).toFixed(6)} units`,
+        subtitle: `${personName} · ${this.renderDecimal(exercise.quantity)} units`,
       });
     });
 
@@ -521,7 +595,7 @@ export class EquityService {
         date: termination.terminatedAt,
         type: 'TERMINATION',
         title: 'Termination recorded',
-        subtitle: `${personName} · forfeited ${this.decimal(termination.unvestedQuantityAtEnd).toFixed(6)}`,
+        subtitle: `${personName} · forfeited ${this.renderDecimal(termination.unvestedQuantityAtEnd)}`,
       });
     });
 
@@ -529,10 +603,10 @@ export class EquityService {
 
     return {
       cards: {
-        outstandingOptions: outstandingOptions.toFixed(6),
-        outstandingRsus: outstandingRsus.toFixed(6),
-        exercised: exercised.toFixed(6),
-        forfeited: forfeitedTotal.toFixed(6),
+        outstandingOptions: this.renderDecimal(outstandingOptions),
+        outstandingRsus: this.renderDecimal(outstandingRsus),
+        exercised: this.renderDecimal(exercised),
+        forfeited: this.renderDecimal(forfeitedTotal),
       },
       timeline: timeline.slice(0, 120),
     };
@@ -575,7 +649,7 @@ export class EquityService {
     const recipientName = `${grant.person.legalFirstName} ${grant.person.legalLastName}`;
     const grantDate = grant.grantDate ? new Date(grant.grantDate).toISOString().slice(0, 10) : '';
     const exercisePriceLine = grant.exercisePrice
-      ? `Exercise Price: ${new Decimal(grant.exercisePrice).toFixed(6)} ${grant.currency}`
+      ? `Exercise Price: ${this.renderDecimal(grant.exercisePrice)} ${grant.currency}`
       : 'Exercise Price: Not applicable (RSU award)';
 
     const vesting = detail.vestingPreview
@@ -596,7 +670,7 @@ export class EquityService {
       `Recipient Email: ${grant.person.primaryEmail ?? 'N/A'}`,
       '',
       `Award Type: ${grant.awardType}`,
-      `Grant Quantity: ${new Decimal(grant.quantity).toFixed(6)}`,
+      `Grant Quantity: ${this.renderDecimal(grant.quantity)}`,
       exercisePriceLine,
       `Plan: ${grant.plan ? `${grant.plan.code} - ${grant.plan.name}` : 'Unassigned'}`,
       '',
@@ -809,7 +883,7 @@ export class EquityService {
         return {
           personId: row.toPersonId as string,
           personName: peopleMap.get(row.toPersonId as string) ?? 'Unknown',
-          outstandingQuantity: this.clampNonNegative(net).toFixed(6),
+          outstandingQuantity: this.renderDecimal(this.clampNonNegative(net)),
         };
       })
       .filter((row) => new Decimal(row.outstandingQuantity).gt(0))
@@ -834,17 +908,17 @@ export class EquityService {
     return {
       generatedAt: new Date().toISOString(),
       shares: {
-        baseOutstandingShares: baseOutstandingShares.toFixed(6),
-        authorizedShares: authorizedShares.toFixed(6),
-        outstandingOptions: outstandingOptions.toFixed(6),
-        outstandingRsus: outstandingRsus.toFixed(6),
-        equityInstrumentsOutstanding: equityInstrumentsOutstanding.toFixed(6),
-        fullyDilutedShares: fullyDilutedShares.toFixed(6),
+        baseOutstandingShares: this.renderDecimal(baseOutstandingShares),
+        authorizedShares: this.renderDecimal(authorizedShares),
+        outstandingOptions: this.renderDecimal(outstandingOptions),
+        outstandingRsus: this.renderDecimal(outstandingRsus),
+        equityInstrumentsOutstanding: this.renderDecimal(equityInstrumentsOutstanding),
+        fullyDilutedShares: this.renderDecimal(fullyDilutedShares),
       },
       optionPool: {
-        reservedShares: reservedPoolShares.toFixed(6),
-        grantedShares: grantedPoolShares.toFixed(6),
-        remainingShares: remainingPoolShares.toFixed(6),
+        reservedShares: this.renderDecimal(reservedPoolShares),
+        grantedShares: this.renderDecimal(grantedPoolShares),
+        remainingShares: this.renderDecimal(remainingPoolShares),
       },
       holders: holderRows,
     };
@@ -865,7 +939,7 @@ export class EquityService {
       },
       update: {
         value: {
-          outstandingShares: outstandingShares.toFixed(6),
+          outstandingShares: this.renderDecimal(outstandingShares),
         } as Prisma.InputJsonValue,
         updatedByUserId: actor.id,
       },
@@ -874,7 +948,7 @@ export class EquityService {
         section: 'equity',
         key: 'capTableBase',
         value: {
-          outstandingShares: outstandingShares.toFixed(6),
+          outstandingShares: this.renderDecimal(outstandingShares),
         } as Prisma.InputJsonValue,
         updatedByUserId: actor.id,
       },
@@ -987,39 +1061,7 @@ export class EquityService {
 
     return this.prisma.$transaction(async (tx) => {
       if (planId) {
-        const plan = await tx.equityPlan.findFirst({
-          where: {
-            id: planId,
-            organizationId: actor.organizationId,
-          },
-          select: {
-            id: true,
-            code: true,
-            reservedShares: true,
-          },
-        });
-
-        if (!plan) {
-          throw new NotFoundException('Equity plan not found for this organization');
-        }
-
-        const granted = await tx.grantAward.aggregate({
-          where: {
-            organizationId: actor.organizationId,
-            planId,
-          },
-          _sum: {
-            quantity: true,
-          },
-        });
-
-        const alreadyGranted = this.decimal(granted._sum.quantity);
-        const remaining = new Decimal(plan.reservedShares).sub(alreadyGranted);
-        if (remaining.lt(quantity)) {
-          throw new BadRequestException(
-            `Plan ${plan.code} has insufficient remaining reserve for this grant`,
-          );
-        }
+        await this.assertPlanCapacity(tx, actor.organizationId, planId, quantity);
       }
 
       const seq = await tx.equityTransaction.aggregate({
@@ -1073,5 +1115,261 @@ export class EquityService {
 
       return grant;
     });
+  }
+
+  async updatePlan(actor: AuthenticatedUser, planId: string, dto: UpdateEquityPlanDto) {
+    const reservedShares = this.parseDecimalInput(dto.reservedShares, 'reserved shares');
+    const name = dto.name.trim();
+
+    if (!name) {
+      throw new BadRequestException('Plan name is required');
+    }
+
+    await this.ensurePlanInOrg(actor.organizationId, planId);
+
+    const granted = await this.prisma.grantAward.aggregate({
+      where: {
+        organizationId: actor.organizationId,
+        planId,
+      },
+      _sum: {
+        quantity: true,
+      },
+    });
+
+    const alreadyGranted = this.decimal(granted._sum.quantity);
+    if (reservedShares.lt(alreadyGranted)) {
+      throw new BadRequestException('Reserved shares cannot be less than already granted shares in this plan');
+    }
+
+    return this.prisma.equityPlan.update({
+      where: {
+        id: planId,
+      },
+      data: {
+        name,
+        reservedShares,
+        effectiveDate: this.parseDateInput(dto.effectiveDate, 'effective date'),
+        expiryDate: this.parseDateInput(dto.expiryDate, 'expiry date'),
+        status: dto.status ?? undefined,
+      },
+    });
+  }
+
+  async updateGrant(actor: AuthenticatedUser, grantId: string, dto: UpdateGrantAwardDto) {
+    const quantity = this.parseDecimalInput(dto.quantity, 'grant quantity');
+
+    if (dto.durationMonths < dto.cliffMonths) {
+      throw new BadRequestException('Vesting duration must be greater than or equal to cliff months');
+    }
+
+    if (dto.durationMonths % dto.intervalMonths !== 0) {
+      throw new BadRequestException('Vesting duration must divide evenly by interval months');
+    }
+
+    const existing = await this.prisma.grantAward.findFirst({
+      where: {
+        id: grantId,
+        organizationId: actor.organizationId,
+      },
+      include: {
+        vestingSchedules: {
+          orderBy: {
+            createdAt: 'asc',
+          },
+          take: 1,
+        },
+      },
+    });
+
+    if (!existing) {
+      throw new NotFoundException('Grant not found');
+    }
+
+    const [exerciseCount, terminationCount] = await this.prisma.$transaction([
+      this.prisma.exerciseRequest.count({
+        where: {
+          organizationId: actor.organizationId,
+          grantId,
+        },
+      }),
+      this.prisma.terminationRecord.count({
+        where: {
+          organizationId: actor.organizationId,
+          grantId,
+        },
+      }),
+    ]);
+
+    if (exerciseCount > 0 || terminationCount > 0) {
+      throw new BadRequestException(
+        'This grant already has lifecycle events and cannot be edited. Create a correcting transaction instead.',
+      );
+    }
+
+    await this.ensurePersonInOrg(actor.organizationId, dto.personId);
+
+    const planId = dto.planId?.trim() || undefined;
+
+    if (planId) {
+      await this.ensurePlanInOrg(actor.organizationId, planId);
+    }
+
+    const isOption = dto.awardType === 'OPTION_ISO' || dto.awardType === 'OPTION_NSO';
+    const exercisePrice = dto.exercisePrice
+      ? this.parseDecimalInput(dto.exercisePrice, 'exercise price', { allowZero: true })
+      : undefined;
+
+    if (isOption && !exercisePrice) {
+      throw new BadRequestException('Exercise price is required for option grants');
+    }
+
+    if (!isOption && exercisePrice) {
+      throw new BadRequestException('Exercise price is only valid for option grants');
+    }
+
+    const grantDate = this.parseDateInput(dto.grantDate, 'grantDate', true) as Date;
+    const vestingStartDate = this.parseDateInput(dto.vestingStartDate, 'vestingStartDate', true) as Date;
+    const expirationDate = this.parseDateInput(dto.expirationDate, 'expirationDate');
+    const currency = (dto.currency ?? 'USD').trim().toUpperCase();
+
+    if (!currency) {
+      throw new BadRequestException('Currency is required');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      if (planId) {
+        await this.assertPlanCapacity(tx, actor.organizationId, planId, quantity, grantId);
+      }
+
+      const updatedGrant = await tx.grantAward.update({
+        where: {
+          id: grantId,
+        },
+        data: {
+          personId: dto.personId,
+          planId,
+          awardType: dto.awardType,
+          quantity,
+          exercisePrice: isOption ? exercisePrice : null,
+          currency,
+          grantDate,
+          expirationDate,
+        },
+      });
+
+      const currentSchedule = existing.vestingSchedules[0];
+      if (currentSchedule) {
+        await tx.vestingSchedule.update({
+          where: {
+            id: currentSchedule.id,
+          },
+          data: {
+            startDate: vestingStartDate,
+            cliffMonths: dto.cliffMonths,
+            durationMonths: dto.durationMonths,
+            intervalMonths: dto.intervalMonths,
+          },
+        });
+      } else {
+        await tx.vestingSchedule.create({
+          data: {
+            organizationId: actor.organizationId,
+            grantId,
+            startDate: vestingStartDate,
+            cliffMonths: dto.cliffMonths,
+            durationMonths: dto.durationMonths,
+            intervalMonths: dto.intervalMonths,
+          },
+        });
+      }
+
+      await tx.equityTransaction.updateMany({
+        where: {
+          organizationId: actor.organizationId,
+          grantId,
+          type: 'GRANT',
+        },
+        data: {
+          planId,
+          toPersonId: dto.personId,
+          quantity,
+          unitPrice: isOption ? exercisePrice : null,
+          currency,
+          effectiveAt: grantDate,
+          reason: dto.notes ?? `${dto.awardType} grant`,
+        },
+      });
+
+      return updatedGrant;
+    });
+  }
+
+  async deleteGrant(actor: AuthenticatedUser, grantId: string) {
+    const existing = await this.prisma.grantAward.findFirst({
+      where: {
+        id: grantId,
+        organizationId: actor.organizationId,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!existing) {
+      throw new NotFoundException('Grant not found');
+    }
+
+    const [exerciseCount, terminationCount] = await this.prisma.$transaction([
+      this.prisma.exerciseRequest.count({
+        where: {
+          organizationId: actor.organizationId,
+          grantId,
+        },
+      }),
+      this.prisma.terminationRecord.count({
+        where: {
+          organizationId: actor.organizationId,
+          grantId,
+        },
+      }),
+    ]);
+
+    if (exerciseCount > 0 || terminationCount > 0) {
+      throw new BadRequestException(
+        'This grant already has lifecycle events and cannot be deleted. Set status via governance workflow instead.',
+      );
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.vestingSchedule.deleteMany({
+        where: {
+          organizationId: actor.organizationId,
+          grantId,
+        },
+      });
+
+      await tx.equityTransaction.updateMany({
+        where: {
+          organizationId: actor.organizationId,
+          grantId,
+        },
+        data: {
+          grantId: null,
+          reason: 'Unlinked from deleted grant',
+        },
+      });
+
+      await tx.grantAward.delete({
+        where: {
+          id: grantId,
+        },
+      });
+    });
+
+    return {
+      id: grantId,
+      deleted: true,
+    };
   }
 }

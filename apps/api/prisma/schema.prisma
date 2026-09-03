@@ -209,6 +209,7 @@ model Person {
   timezone         String    @default("UTC")
   classification   String?
   employmentStatus String?
+  hrisProfile      Json?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
   archivedAt       DateTime?

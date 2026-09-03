@@ -14,11 +14,14 @@ apply_database_schema() {
   echo "Ensuring database schema..."
 
   if [[ -d "$ROOT_DIR/apps/api/prisma/migrations" ]] && find "$ROOT_DIR/apps/api/prisma/migrations" -mindepth 1 -maxdepth 1 -type d | grep -q .; then
+    echo "Applying committed Prisma migrations"
     docker compose run --rm api ./node_modules/.bin/prisma migrate deploy
-  else
-    echo "No prisma migrations found; applying schema with prisma db push"
-    docker compose run --rm api ./node_modules/.bin/prisma db push --skip-generate
   fi
+
+  # Always sync schema to capture latest model changes, including environments
+  # where new migrations were not generated yet.
+  echo "Syncing Prisma schema with database"
+  docker compose run --rm api ./node_modules/.bin/prisma db push --skip-generate
 }
 
 cd "$ROOT_DIR"

@@ -126,3 +126,75 @@ export class UpdateCapTableBaseDto {
   @IsString()
   outstandingShares!: string;
 }
+
+export class UpdateGrantAwardDto {
+  @IsUUID()
+  personId!: string;
+
+  @IsIn(GrantAwardTypeValues)
+  awardType!: GrantAwardType;
+
+  @IsString()
+  quantity!: string;
+
+  @IsOptional()
+  @IsString()
+  exercisePrice?: string;
+
+  @IsOptional()
+  @IsUUID()
+  planId?: string;
+
+  @IsOptional()
+  @IsString()
+  currency?: string;
+
+  @IsDateString()
+  grantDate!: string;
+
+  @IsOptional()
+  @IsDateString()
+  expirationDate?: string;
+
+  @IsDateString()
+  vestingStartDate!: string;
+
+  @IsInt()
+  @Min(0)
+  @Max(120)
+  cliffMonths!: number;
+
+  @IsInt()
+  @Min(1)
+  @Max(240)
+  durationMonths!: number;
+
+  @IsInt()
+  @Min(1)
+  @Max(60)
+  intervalMonths!: number;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+}
+
+export class UpdateEquityPlanDto {
+  @IsString()
+  name!: string;
+
+  @IsString()
+  reservedShares!: string;
+
+  @IsOptional()
+  @IsDateString()
+  effectiveDate?: string;
+
+  @IsOptional()
+  @IsDateString()
+  expiryDate?: string;
+
+  @IsOptional()
+  @IsIn(EquityPlanStatusValues)
+  status?: EquityPlanStatus;
+}
