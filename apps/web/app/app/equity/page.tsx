@@ -1,7 +1,7 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 
 type Person = {
   id: string;
@@ -78,6 +78,28 @@ type DashboardResponse = {
   }>;
 };
 
+type CapTableResponse = {
+  generatedAt: string;
+  shares: {
+    baseOutstandingShares: string;
+    authorizedShares: string;
+    outstandingOptions: string;
+    outstandingRsus: string;
+    equityInstrumentsOutstanding: string;
+    fullyDilutedShares: string;
+  };
+  optionPool: {
+    reservedShares: string;
+    grantedShares: string;
+    remainingShares: string;
+  };
+  holders: Array<{
+    personId: string;
+    personName: string;
+    outstandingQuantity: string;
+  }>;
+};
+
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? '/api/v1';
 const companyTreasuryValue = '__COMPANY__';
 
@@ -144,16 +166,37 @@ function dateInputToday(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+function normalizeNumericInput(value: string): string {
+  return value.trim().replaceAll(',', '');
+}
+
+function isDecimalLike(value: string): boolean {
+  return /^\d+(\.\d+)?$/.test(value);
+}
+
+function toDayStartIso(dateInput: string): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateInput)) {
+    return null;
+  }
+  const parsed = new Date(`${dateInput}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+  return parsed.toISOString();
+}
+
 export default function EquityPage() {
   const [people, setPeople] = useState<Person[]>([]);
   const [plans, setPlans] = useState<EquityPlan[]>([]);
   const [grants, setGrants] = useState<GrantAward[]>([]);
   const [txns, setTxns] = useState<EquityTxn[]>([]);
   const [dashboard, setDashboard] = useState<DashboardResponse | null>(null);
+  const [capTable, setCapTable] = useState<CapTableResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [savingGrant, setSavingGrant] = useState(false);
   const [savingTxn, setSavingTxn] = useState(false);
   const [savingPlan, setSavingPlan] = useState(false);
+  const [savingCapTableBase, setSavingCapTableBase] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [grantAwardType, setGrantAwardType] = useState<'OPTION_ISO' | 'OPTION_NSO' | 'RSU'>('OPTION_NSO');
@@ -165,12 +208,13 @@ export default function EquityPage() {
     setError(null);
 
     try {
-      const [peopleResp, plansResp, grantsResp, ledgerResp, dashboardResp] = await Promise.all([
+      const [peopleResp, plansResp, grantsResp, ledgerResp, dashboardResp, capTableResp] = await Promise.all([
         fetch(`${apiBaseUrl}/people?page=1&pageSize=100`, { credentials: 'include' }),
         fetch(`${apiBaseUrl}/equity/plans`, { credentials: 'include' }),
         fetch(`${apiBaseUrl}/equity/grants`, { credentials: 'include' }),
         fetch(`${apiBaseUrl}/equity/ledger`, { credentials: 'include' }),
         fetch(`${apiBaseUrl}/equity/dashboard`, { credentials: 'include' }),
+        fetch(`${apiBaseUrl}/equity/cap-table`, { credentials: 'include' }),
       ]);
 
       if (!peopleResp.ok) {
@@ -193,6 +237,10 @@ export default function EquityPage() {
         setError(await readApiError(dashboardResp, 'Unable to load equity dashboard.'));
         return;
       }
+      if (!capTableResp.ok) {
+        setError(await readApiError(capTableResp, 'Unable to load cap table.'));
+        return;
+      }
 
       const peoplePayload = (await peopleResp.json()) as PeopleResponse;
       setPeople(peoplePayload.data);
@@ -200,6 +248,7 @@ export default function EquityPage() {
       setGrants((await grantsResp.json()) as GrantAward[]);
       setTxns((await ledgerResp.json()) as EquityTxn[]);
       setDashboard((await dashboardResp.json()) as DashboardResponse);
+      setCapTable((await capTableResp.json()) as CapTableResponse);
     } catch {
       setError('Unable to load equity workspace.');
     } finally {
@@ -222,26 +271,88 @@ export default function EquityPage() {
     const grantDate = String(form.get('grantDate') ?? '').trim();
     const vestingStartDate = String(form.get('vestingStartDate') ?? '').trim();
     const expirationDate = String(form.get('expirationDate') ?? '').trim();
-    const exercisePrice = String(form.get('exercisePrice') ?? '').trim();
+    const exercisePrice = normalizeNumericInput(String(form.get('exercisePrice') ?? ''));
+    const quantity = normalizeNumericInput(String(form.get('quantity') ?? ''));
+    const currency = String(form.get('currency') ?? 'USD').trim() || 'USD';
+
+    if (!quantity || !isDecimalLike(quantity)) {
+      setError('Grant quantity must be a valid positive number (e.g. 25000 or 25000.5).');
+      setSavingGrant(false);
+      return;
+    }
+
+    const grantDateIso = toDayStartIso(grantDate);
+    if (!grantDateIso) {
+      setError('Grant date is invalid. Use YYYY-MM-DD.');
+      setSavingGrant(false);
+      return;
+    }
+
+    const vestingStartDateIso = toDayStartIso(vestingStartDate);
+    if (!vestingStartDateIso) {
+      setError('Vesting start date is invalid. Use YYYY-MM-DD.');
+      setSavingGrant(false);
+      return;
+    }
+
+    let expirationDateIso: string | undefined;
+    if (expirationDate) {
+      expirationDateIso = toDayStartIso(expirationDate) ?? undefined;
+      if (!expirationDateIso) {
+        setError('Expiration date is invalid. Use YYYY-MM-DD.');
+        setSavingGrant(false);
+        return;
+      }
+    }
+
+    if ((awardType === 'OPTION_ISO' || awardType === 'OPTION_NSO') && (!exercisePrice || !isDecimalLike(exercisePrice))) {
+      setError('Exercise price is required for option grants and must be a valid number.');
+      setSavingGrant(false);
+      return;
+    }
+
+    if (awardType === 'RSU' && exercisePrice) {
+      setError('Exercise price is not applicable for RSU awards.');
+      setSavingGrant(false);
+      return;
+    }
+
+    const cliffMonths = Number(form.get('cliffMonths') ?? 12);
+    const durationMonths = Number(form.get('durationMonths') ?? 48);
+    const intervalMonths = Number(form.get('intervalMonths') ?? 1);
+
+    if (!Number.isInteger(cliffMonths) || cliffMonths < 0) {
+      setError('Cliff months must be a whole number greater than or equal to 0.');
+      setSavingGrant(false);
+      return;
+    }
+
+    if (!Number.isInteger(durationMonths) || durationMonths < 1) {
+      setError('Vesting duration months must be a whole number greater than or equal to 1.');
+      setSavingGrant(false);
+      return;
+    }
+
+    if (!Number.isInteger(intervalMonths) || intervalMonths < 1) {
+      setError('Vesting interval months must be a whole number greater than or equal to 1.');
+      setSavingGrant(false);
+      return;
+    }
 
     const payload = {
       personId: String(form.get('personId') ?? '').trim(),
       awardType,
-      quantity: String(form.get('quantity') ?? ''),
+      quantity,
       exercisePrice:
         awardType === 'OPTION_ISO' || awardType === 'OPTION_NSO' ? exercisePrice || undefined : undefined,
       planId: String(form.get('planId') ?? '').trim() || undefined,
-      currency: String(form.get('currency') ?? 'USD').trim() || 'USD',
-      grantDate: grantDate ? new Date(`${grantDate}T00:00:00.000Z`).toISOString() : '',
-      expirationDate: expirationDate
-        ? new Date(`${expirationDate}T00:00:00.000Z`).toISOString()
-        : undefined,
-      vestingStartDate: vestingStartDate
-        ? new Date(`${vestingStartDate}T00:00:00.000Z`).toISOString()
-        : '',
-      cliffMonths: Number(form.get('cliffMonths') ?? 12),
-      durationMonths: Number(form.get('durationMonths') ?? 48),
-      intervalMonths: Number(form.get('intervalMonths') ?? 1),
+      currency,
+      grantDate: grantDateIso,
+      expirationDate: expirationDateIso,
+      vestingStartDate: vestingStartDateIso,
+      cliffMonths,
+      durationMonths,
+      intervalMonths,
       notes: String(form.get('notes') ?? '').trim() || undefined,
     };
 
@@ -269,6 +380,43 @@ export default function EquityPage() {
     }
   }
 
+  async function onUpdateCapTableBase(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSavingCapTableBase(true);
+    setError(null);
+    setNotice(null);
+
+    const form = new FormData(event.currentTarget);
+    const outstandingShares = normalizeNumericInput(String(form.get('outstandingShares') ?? ''));
+
+    if (!outstandingShares || !isDecimalLike(outstandingShares)) {
+      setError('Base outstanding shares must be a valid non-negative number.');
+      setSavingCapTableBase(false);
+      return;
+    }
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/equity/cap-table/base`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ outstandingShares }),
+      });
+
+      if (!response.ok) {
+        setError(await readApiError(response, 'Unable to update base outstanding shares.'));
+        return;
+      }
+
+      setCapTable((await response.json()) as CapTableResponse);
+      setNotice('Base outstanding shares updated.');
+    } catch {
+      setError('Unable to update base outstanding shares.');
+    } finally {
+      setSavingCapTableBase(false);
+    }
+  }
+
   async function onCreateManualTxn(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSavingTxn(true);
@@ -283,8 +431,8 @@ export default function EquityPage() {
     const payload = {
       type: String(form.get('type') ?? ''),
       effectiveAt: new Date(effectiveAtRaw).toISOString(),
-      quantity: String(form.get('quantity') ?? ''),
-      unitPrice: String(form.get('unitPrice') ?? '').trim() || undefined,
+      quantity: normalizeNumericInput(String(form.get('quantity') ?? '')),
+      unitPrice: normalizeNumericInput(String(form.get('unitPrice') ?? '').trim()) || undefined,
       fromPersonId: fromHolder === companyTreasuryValue ? undefined : fromHolder,
       toPersonId: toHolder === companyTreasuryValue ? undefined : toHolder,
       reason: String(form.get('reason') ?? '').trim() || undefined,
@@ -324,7 +472,7 @@ export default function EquityPage() {
     const payload = {
       code: String(form.get('code') ?? '').trim(),
       name: String(form.get('name') ?? '').trim(),
-      reservedShares: String(form.get('reservedShares') ?? '').trim(),
+      reservedShares: normalizeNumericInput(String(form.get('reservedShares') ?? '').trim()),
       effectiveDate: String(form.get('effectiveDate') ?? '').trim()
         ? new Date(`${String(form.get('effectiveDate'))}T00:00:00.000Z`).toISOString()
         : undefined,
@@ -399,6 +547,102 @@ export default function EquityPage() {
           </div>
         </article>
       ) : null}
+
+      <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 className="text-lg font-semibold">Cap Table and Share Base</h2>
+        <p className="mt-1 text-sm text-slate-600">
+          Define your base outstanding shares and monitor option-pool utilization plus holder-level outstanding balances.
+        </p>
+
+        {capTable ? (
+          <>
+            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs uppercase tracking-wide text-slate-500">Base Outstanding Shares</p>
+                <p className="mt-1 text-lg font-semibold text-slate-900">{capTable.shares.baseOutstandingShares}</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs uppercase tracking-wide text-slate-500">Outstanding Equity Instruments</p>
+                <p className="mt-1 text-lg font-semibold text-slate-900">{capTable.shares.equityInstrumentsOutstanding}</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs uppercase tracking-wide text-slate-500">Fully Diluted Shares</p>
+                <p className="mt-1 text-lg font-semibold text-slate-900">{capTable.shares.fullyDilutedShares}</p>
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-xl border border-slate-200 p-3">
+                <p className="text-xs uppercase tracking-wide text-slate-500">Authorized Shares</p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">{capTable.shares.authorizedShares}</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 p-3">
+                <p className="text-xs uppercase tracking-wide text-slate-500">Pool Reserved</p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">{capTable.optionPool.reservedShares}</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 p-3">
+                <p className="text-xs uppercase tracking-wide text-slate-500">Pool Granted</p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">{capTable.optionPool.grantedShares}</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 p-3">
+                <p className="text-xs uppercase tracking-wide text-slate-500">Pool Remaining</p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">{capTable.optionPool.remainingShares}</p>
+              </div>
+            </div>
+
+            <form className="mt-4 grid gap-3 md:grid-cols-4" onSubmit={onUpdateCapTableBase}>
+              <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500 md:col-span-2">
+                <span>Set Base Outstanding Shares</span>
+                <input
+                  name="outstandingShares"
+                  defaultValue={capTable.shares.baseOutstandingShares}
+                  placeholder="10000000"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+                />
+              </label>
+              <div className="md:col-span-2 flex items-end">
+                <button
+                  type="submit"
+                  disabled={savingCapTableBase}
+                  className="w-full rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:opacity-60"
+                >
+                  {savingCapTableBase ? 'Saving...' : 'Update Share Base'}
+                </button>
+              </div>
+            </form>
+
+            <div className="mt-5">
+              <h3 className="text-sm font-semibold text-slate-900">Outstanding by Holder</h3>
+              {capTable.holders.length === 0 ? (
+                <p className="mt-2 text-sm text-slate-600">No holder balances recorded yet.</p>
+              ) : (
+                <div className="mt-2 overflow-x-auto">
+                  <table className="min-w-full text-left text-sm">
+                    <thead className="text-xs uppercase tracking-wide text-slate-500">
+                      <tr>
+                        <th className="pb-2 pr-4">Holder</th>
+                        <th className="pb-2 pr-4">Outstanding Quantity</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {capTable.holders.map((holder) => (
+                        <tr key={holder.personId} className="border-t border-slate-200">
+                          <td className="py-2 pr-4 font-medium text-slate-900">{holder.personName}</td>
+                          <td className="py-2 pr-4 text-slate-700">{holder.outstandingQuantity}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </>
+        ) : loading ? (
+          <p className="mt-4 text-sm text-slate-600">Loading cap table...</p>
+        ) : (
+          <p className="mt-4 text-sm text-slate-600">No cap-table data available yet.</p>
+        )}
+      </article>
 
       <div className="grid gap-5 xl:grid-cols-2">
         <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">

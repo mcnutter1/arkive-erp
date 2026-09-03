@@ -31,6 +31,8 @@ Implemented v1 endpoints:
 - `GET /api/v1/equity/ledger`
 - `POST /api/v1/equity/ledger`
 - `GET /api/v1/equity/dashboard`
+- `GET /api/v1/equity/cap-table`
+- `POST /api/v1/equity/cap-table/base`
 - `GET /api/v1/equity/plans`
 - `POST /api/v1/equity/plans`
 - `GET /api/v1/equity/grants`

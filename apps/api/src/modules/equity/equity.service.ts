@@ -5,7 +5,7 @@ import { Decimal } from 'decimal.js';
 import { AuthenticatedUser } from '../auth/auth.types.js';
 import { PrismaService } from '../common/prisma.service.js';
 import { VestingService } from '../vesting/vesting.service.js';
-import { CreateEquityPlanDto, CreateEquityTransactionDto, CreateGrantAwardDto } from './dto.js';
+import { CreateEquityPlanDto, CreateEquityTransactionDto, CreateGrantAwardDto, UpdateCapTableBaseDto } from './dto.js';
 
 @Injectable()
 export class EquityService {
@@ -49,6 +49,99 @@ export class EquityService {
     return value;
   }
 
+  private parseDecimalInput(
+    value: unknown,
+    fieldName: string,
+    options?: {
+      allowZero?: boolean;
+    },
+  ): Decimal {
+    const allowZero = options?.allowZero ?? false;
+
+    if (value === null || value === undefined) {
+      throw new BadRequestException(`${fieldName} is required`);
+    }
+
+    let normalized: string | number | Decimal;
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (!trimmed) {
+        throw new BadRequestException(`${fieldName} is required`);
+      }
+      normalized = trimmed.replaceAll(',', '');
+    } else if (typeof value === 'number' || value instanceof Decimal) {
+      normalized = value;
+    } else {
+      throw new BadRequestException(`Invalid ${fieldName}`);
+    }
+
+    let parsed: Decimal;
+    try {
+      parsed = new Decimal(normalized);
+    } catch {
+      throw new BadRequestException(`Invalid ${fieldName}`);
+    }
+
+    if (!parsed.isFinite()) {
+      throw new BadRequestException(`Invalid ${fieldName}`);
+    }
+
+    if (allowZero ? parsed.lt(0) : parsed.lte(0)) {
+      throw new BadRequestException(
+        allowZero ? `${fieldName} cannot be negative` : `${fieldName} must be positive`,
+      );
+    }
+
+    return parsed;
+  }
+
+  private parseDateInput(value: string | undefined, fieldName: string, required = false): Date | undefined {
+    const normalized = value?.trim();
+
+    if (!normalized) {
+      if (required) {
+        throw new BadRequestException(`${fieldName} is required`);
+      }
+      return undefined;
+    }
+
+    const parsed = new Date(normalized);
+    if (Number.isNaN(parsed.getTime())) {
+      throw new BadRequestException(`Invalid ${fieldName}`);
+    }
+
+    return parsed;
+  }
+
+  private async getConfiguredBaseOutstandingShares(organizationId: string): Promise<Decimal> {
+    const setting = await this.prisma.systemSetting.findFirst({
+      where: {
+        organizationId,
+        section: 'equity',
+        key: 'capTableBase',
+      },
+      select: {
+        value: true,
+      },
+    });
+
+    if (!setting) {
+      return new Decimal(0);
+    }
+
+    const payload = this.parseSettingObject(setting.value);
+    const raw = payload.outstandingShares;
+    if (raw === null || raw === undefined || raw === '') {
+      return new Decimal(0);
+    }
+
+    try {
+      return this.parseDecimalInput(raw, 'outstanding shares', { allowZero: true });
+    } catch {
+      return new Decimal(0);
+    }
+  }
+
   private async ensurePersonInOrg(organizationId: string, personId: string): Promise<void> {
     const person = await this.prisma.person.findFirst({
       where: {
@@ -74,10 +167,7 @@ export class EquityService {
   }
 
   async createPlan(actor: AuthenticatedUser, dto: CreateEquityPlanDto) {
-    const reservedShares = new Decimal(dto.reservedShares);
-    if (reservedShares.lte(0)) {
-      throw new BadRequestException('Reserved shares must be positive');
-    }
+    const reservedShares = this.parseDecimalInput(dto.reservedShares, 'reserved shares');
 
     const code = dto.code.trim().toUpperCase();
     const name = dto.name.trim();
@@ -92,8 +182,8 @@ export class EquityService {
           code,
           name,
           reservedShares,
-          effectiveDate: dto.effectiveDate ? new Date(dto.effectiveDate) : undefined,
-          expiryDate: dto.expiryDate ? new Date(dto.expiryDate) : undefined,
+          effectiveDate: this.parseDateInput(dto.effectiveDate, 'effective date'),
+          expiryDate: this.parseDateInput(dto.expiryDate, 'expiry date'),
           status: dto.status ?? 'DRAFT',
         },
       });
@@ -576,11 +666,226 @@ export class EquityService {
     });
   }
 
-  async createTransaction(actor: AuthenticatedUser, dto: CreateEquityTransactionDto) {
-    const quantity = new Decimal(dto.quantity);
-    if (quantity.lte(0)) {
-      throw new BadRequestException('Quantity must be positive');
+  async getCapTable(actor: AuthenticatedUser) {
+    const [
+      baseOutstandingShares,
+      securityClassTotals,
+      planReserveTotals,
+      grantTotals,
+      optionGrantTotals,
+      rsuGrantTotals,
+      completedExerciseTotals,
+      forfeitedOptionTotals,
+      forfeitedRsuTotals,
+      issuedTo,
+      issuedFrom,
+    ] = await Promise.all([
+      this.getConfiguredBaseOutstandingShares(actor.organizationId),
+      this.prisma.securityClass.aggregate({
+        where: { organizationId: actor.organizationId },
+        _sum: { authorizedShares: true },
+      }),
+      this.prisma.equityPlan.aggregate({
+        where: { organizationId: actor.organizationId },
+        _sum: { reservedShares: true },
+      }),
+      this.prisma.grantAward.aggregate({
+        where: {
+          organizationId: actor.organizationId,
+          planId: { not: null },
+        },
+        _sum: { quantity: true },
+      }),
+      this.prisma.grantAward.aggregate({
+        where: {
+          organizationId: actor.organizationId,
+          awardType: {
+            in: ['OPTION_ISO', 'OPTION_NSO'],
+          },
+        },
+        _sum: {
+          quantity: true,
+        },
+      }),
+      this.prisma.grantAward.aggregate({
+        where: {
+          organizationId: actor.organizationId,
+          awardType: 'RSU',
+        },
+        _sum: {
+          quantity: true,
+        },
+      }),
+      this.prisma.exerciseRequest.aggregate({
+        where: {
+          organizationId: actor.organizationId,
+          status: 'COMPLETED',
+        },
+        _sum: {
+          quantity: true,
+        },
+      }),
+      this.prisma.terminationRecord.aggregate({
+        where: {
+          organizationId: actor.organizationId,
+          grant: {
+            is: {
+              awardType: {
+                in: ['OPTION_ISO', 'OPTION_NSO'],
+              },
+            },
+          },
+        },
+        _sum: {
+          unvestedQuantityAtEnd: true,
+        },
+      }),
+      this.prisma.terminationRecord.aggregate({
+        where: {
+          organizationId: actor.organizationId,
+          grant: {
+            is: {
+              awardType: 'RSU',
+            },
+          },
+        },
+        _sum: {
+          unvestedQuantityAtEnd: true,
+        },
+      }),
+      this.prisma.equityTransaction.groupBy({
+        by: ['toPersonId'],
+        orderBy: { toPersonId: 'asc' },
+        where: {
+          organizationId: actor.organizationId,
+          toPersonId: { not: null },
+        },
+        _sum: { quantity: true },
+      }),
+      this.prisma.equityTransaction.groupBy({
+        by: ['fromPersonId'],
+        orderBy: { fromPersonId: 'asc' },
+        where: {
+          organizationId: actor.organizationId,
+          fromPersonId: { not: null },
+        },
+        _sum: { quantity: true },
+      }),
+    ]);
+
+    const outgoingMap = new Map<string, Decimal>();
+    for (const row of issuedFrom) {
+      if (row.fromPersonId) {
+        outgoingMap.set(row.fromPersonId, row._sum?.quantity ?? new Decimal(0));
+      }
     }
+
+    const personIds = issuedTo
+      .map((row) => row.toPersonId)
+      .filter((personId): personId is string => typeof personId === 'string');
+
+    const people = personIds.length
+      ? await this.prisma.person.findMany({
+          where: {
+            organizationId: actor.organizationId,
+            id: { in: personIds },
+          },
+          select: {
+            id: true,
+            legalFirstName: true,
+            legalLastName: true,
+          },
+        })
+      : [];
+
+    const peopleMap = new Map(people.map((person) => [person.id, `${person.legalFirstName} ${person.legalLastName}`]));
+
+    const holderRows = issuedTo
+      .filter((row) => row.toPersonId)
+      .map((row) => {
+        const incoming = row._sum?.quantity ?? new Decimal(0);
+        const outgoing = outgoingMap.get(row.toPersonId as string) ?? new Decimal(0);
+        const net = incoming.sub(outgoing);
+        return {
+          personId: row.toPersonId as string,
+          personName: peopleMap.get(row.toPersonId as string) ?? 'Unknown',
+          outstandingQuantity: this.clampNonNegative(net).toFixed(6),
+        };
+      })
+      .filter((row) => new Decimal(row.outstandingQuantity).gt(0))
+      .sort((a, b) => new Decimal(b.outstandingQuantity).cmp(new Decimal(a.outstandingQuantity)));
+
+    const optionsGranted = this.decimal(optionGrantTotals._sum.quantity);
+    const rsusGranted = this.decimal(rsuGrantTotals._sum.quantity);
+    const exercised = this.decimal(completedExerciseTotals._sum.quantity);
+    const forfeitedOptions = this.decimal(forfeitedOptionTotals._sum.unvestedQuantityAtEnd);
+    const forfeitedRsus = this.decimal(forfeitedRsuTotals._sum.unvestedQuantityAtEnd);
+
+    const outstandingOptions = this.clampNonNegative(optionsGranted.sub(exercised).sub(forfeitedOptions));
+    const outstandingRsus = this.clampNonNegative(rsusGranted.sub(forfeitedRsus));
+    const equityInstrumentsOutstanding = outstandingOptions.add(outstandingRsus);
+    const fullyDilutedShares = baseOutstandingShares.add(equityInstrumentsOutstanding);
+
+    const reservedPoolShares = this.decimal(planReserveTotals._sum.reservedShares);
+    const grantedPoolShares = this.decimal(grantTotals._sum.quantity);
+    const remainingPoolShares = this.clampNonNegative(reservedPoolShares.sub(grantedPoolShares));
+    const authorizedShares = this.decimal(securityClassTotals._sum.authorizedShares);
+
+    return {
+      generatedAt: new Date().toISOString(),
+      shares: {
+        baseOutstandingShares: baseOutstandingShares.toFixed(6),
+        authorizedShares: authorizedShares.toFixed(6),
+        outstandingOptions: outstandingOptions.toFixed(6),
+        outstandingRsus: outstandingRsus.toFixed(6),
+        equityInstrumentsOutstanding: equityInstrumentsOutstanding.toFixed(6),
+        fullyDilutedShares: fullyDilutedShares.toFixed(6),
+      },
+      optionPool: {
+        reservedShares: reservedPoolShares.toFixed(6),
+        grantedShares: grantedPoolShares.toFixed(6),
+        remainingShares: remainingPoolShares.toFixed(6),
+      },
+      holders: holderRows,
+    };
+  }
+
+  async updateCapTableBase(actor: AuthenticatedUser, dto: UpdateCapTableBaseDto) {
+    const outstandingShares = this.parseDecimalInput(dto.outstandingShares, 'outstanding shares', {
+      allowZero: true,
+    });
+
+    await this.prisma.systemSetting.upsert({
+      where: {
+        organizationId_section_key: {
+          organizationId: actor.organizationId,
+          section: 'equity',
+          key: 'capTableBase',
+        },
+      },
+      update: {
+        value: {
+          outstandingShares: outstandingShares.toFixed(6),
+        } as Prisma.InputJsonValue,
+        updatedByUserId: actor.id,
+      },
+      create: {
+        organizationId: actor.organizationId,
+        section: 'equity',
+        key: 'capTableBase',
+        value: {
+          outstandingShares: outstandingShares.toFixed(6),
+        } as Prisma.InputJsonValue,
+        updatedByUserId: actor.id,
+      },
+    });
+
+    return this.getCapTable(actor);
+  }
+
+  async createTransaction(actor: AuthenticatedUser, dto: CreateEquityTransactionDto) {
+    const quantity = this.parseDecimalInput(dto.quantity, 'quantity');
+    const effectiveAt = this.parseDateInput(dto.effectiveAt, 'effectiveAt', true);
 
     if (dto.fromPersonId) {
       await this.ensurePersonInOrg(actor.organizationId, dto.fromPersonId);
@@ -630,9 +935,9 @@ export class EquityService {
       data: {
         organizationId: actor.organizationId,
         type: dto.type,
-        effectiveAt: new Date(dto.effectiveAt),
+        effectiveAt,
         quantity,
-        unitPrice: dto.unitPrice ? new Decimal(dto.unitPrice) : undefined,
+        unitPrice: dto.unitPrice ? this.parseDecimalInput(dto.unitPrice, 'unit price', { allowZero: true }) : undefined,
         securityClassId: dto.securityClassId,
         fromPersonId: dto.fromPersonId,
         toPersonId: dto.toPersonId,
@@ -644,10 +949,7 @@ export class EquityService {
   }
 
   async createGrant(actor: AuthenticatedUser, dto: CreateGrantAwardDto) {
-    const quantity = new Decimal(dto.quantity);
-    if (quantity.lte(0)) {
-      throw new BadRequestException('Grant quantity must be positive');
-    }
+    const quantity = this.parseDecimalInput(dto.quantity, 'grant quantity');
 
     if (dto.durationMonths < dto.cliffMonths) {
       throw new BadRequestException('Vesting duration must be greater than or equal to cliff months');
@@ -659,25 +961,12 @@ export class EquityService {
 
     await this.ensurePersonInOrg(actor.organizationId, dto.personId);
 
-    let planId: string | undefined;
-    if (dto.planId) {
-      const plan = await this.prisma.equityPlan.findFirst({
-        where: {
-          id: dto.planId,
-          organizationId: actor.organizationId,
-        },
-        select: { id: true },
-      });
-
-      if (!plan) {
-        throw new NotFoundException('Equity plan not found for this organization');
-      }
-
-      planId = plan.id;
-    }
+    const planId = dto.planId?.trim() || undefined;
 
     const isOption = dto.awardType === 'OPTION_ISO' || dto.awardType === 'OPTION_NSO';
-    const exercisePrice = dto.exercisePrice ? new Decimal(dto.exercisePrice) : undefined;
+    const exercisePrice = dto.exercisePrice
+      ? this.parseDecimalInput(dto.exercisePrice, 'exercise price', { allowZero: true })
+      : undefined;
 
     if (isOption && !exercisePrice) {
       throw new BadRequestException('Exercise price is required for option grants');
@@ -687,13 +976,9 @@ export class EquityService {
       throw new BadRequestException('Exercise price is only valid for option grants');
     }
 
-    if (exercisePrice && exercisePrice.lt(0)) {
-      throw new BadRequestException('Exercise price cannot be negative');
-    }
-
-    const grantDate = new Date(dto.grantDate);
-    const vestingStartDate = new Date(dto.vestingStartDate);
-    const expirationDate = dto.expirationDate ? new Date(dto.expirationDate) : undefined;
+    const grantDate = this.parseDateInput(dto.grantDate, 'grantDate', true);
+    const vestingStartDate = this.parseDateInput(dto.vestingStartDate, 'vestingStartDate', true);
+    const expirationDate = this.parseDateInput(dto.expirationDate, 'expirationDate');
     const currency = (dto.currency ?? 'USD').trim().toUpperCase();
 
     if (!currency) {
@@ -701,6 +986,42 @@ export class EquityService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      if (planId) {
+        const plan = await tx.equityPlan.findFirst({
+          where: {
+            id: planId,
+            organizationId: actor.organizationId,
+          },
+          select: {
+            id: true,
+            code: true,
+            reservedShares: true,
+          },
+        });
+
+        if (!plan) {
+          throw new NotFoundException('Equity plan not found for this organization');
+        }
+
+        const granted = await tx.grantAward.aggregate({
+          where: {
+            organizationId: actor.organizationId,
+            planId,
+          },
+          _sum: {
+            quantity: true,
+          },
+        });
+
+        const alreadyGranted = this.decimal(granted._sum.quantity);
+        const remaining = new Decimal(plan.reservedShares).sub(alreadyGranted);
+        if (remaining.lt(quantity)) {
+          throw new BadRequestException(
+            `Plan ${plan.code} has insufficient remaining reserve for this grant`,
+          );
+        }
+      }
+
       const seq = await tx.equityTransaction.aggregate({
         where: { organizationId: actor.organizationId },
         _max: { ledgerSequence: true },

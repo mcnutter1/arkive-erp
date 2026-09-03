@@ -5,7 +5,7 @@ import { CurrentUser } from '../auth/current-user.decorator.js';
 import { AuthenticatedUser } from '../auth/auth.types.js';
 import { RequirePermissions } from '../authorization/permissions.decorator.js';
 import { PermissionsGuard } from '../authorization/permissions.guard.js';
-import { CreateEquityPlanDto, CreateEquityTransactionDto, CreateGrantAwardDto } from './dto.js';
+import { CreateEquityPlanDto, CreateEquityTransactionDto, CreateGrantAwardDto, UpdateCapTableBaseDto } from './dto.js';
 import { EquityService } from './equity.service.js';
 
 @Controller({ path: 'equity', version: '1' })
@@ -23,6 +23,18 @@ export class EquityController {
   @RequirePermissions('equity.read')
   dashboard(@CurrentUser() actor: AuthenticatedUser) {
     return this.equityService.getDashboard(actor);
+  }
+
+  @Get('cap-table')
+  @RequirePermissions('equity.read')
+  capTable(@CurrentUser() actor: AuthenticatedUser) {
+    return this.equityService.getCapTable(actor);
+  }
+
+  @Post('cap-table/base')
+  @RequirePermissions('equity.write')
+  updateCapTableBase(@CurrentUser() actor: AuthenticatedUser, @Body() dto: UpdateCapTableBaseDto) {
+    return this.equityService.updateCapTableBase(actor, dto);
   }
 
   @Post('ledger')

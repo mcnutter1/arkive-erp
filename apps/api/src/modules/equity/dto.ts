@@ -121,3 +121,8 @@ export class CreateEquityPlanDto {
   @IsIn(EquityPlanStatusValues)
   status?: EquityPlanStatus;
 }
+
+export class UpdateCapTableBaseDto {
+  @IsString()
+  outstandingShares!: string;
+}
