@@ -1,12 +1,58 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 
 import { AuthenticatedUser } from '../auth/auth.types.js';
+import { PaginatedResponse } from '../common/paginated-response.js';
 import { PrismaService } from '../common/prisma.service.js';
-import { CreateTaskDto } from './dto.js';
+import { CreateTaskDto, ListTasksQueryDto } from './dto.js';
 
 @Injectable()
 export class TasksService {
   constructor(private readonly prisma: PrismaService) {}
+
+  async listTasks(
+    actor: AuthenticatedUser,
+    query: ListTasksQueryDto,
+  ): Promise<PaginatedResponse<{ id: string; title: string; description: string | null; status: string; dueAt: Date | null }>> {
+    const where: Prisma.TaskWhereInput = {
+      organizationId: actor.organizationId,
+      archivedAt: null,
+      ...(query.search
+        ? {
+            OR: [
+              { title: { contains: query.search, mode: 'insensitive' } },
+              { description: { contains: query.search, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+    };
+
+    const skip = (query.page - 1) * query.pageSize;
+
+    const [total, data] = await this.prisma.$transaction([
+      this.prisma.task.count({ where }),
+      this.prisma.task.findMany({
+        where,
+        orderBy: [{ createdAt: 'desc' }],
+        skip,
+        take: query.pageSize,
+        select: {
+          id: true,
+          title: true,
+          description: true,
+          status: true,
+          dueAt: true,
+        },
+      }),
+    ]);
+
+    return {
+      data,
+      page: query.page,
+      pageSize: query.pageSize,
+      total,
+    };
+  }
 
   async createTask(actor: AuthenticatedUser, dto: CreateTaskDto) {
     let createdByPersonId: string | undefined;

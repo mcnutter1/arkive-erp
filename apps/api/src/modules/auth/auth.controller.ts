@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Get,
   Post,
@@ -13,6 +14,7 @@ import { CurrentUser } from './current-user.decorator.js';
 import { AuthenticatedUser } from './auth.types.js';
 import { AuthGuard } from './auth.guard.js';
 import { AuthService } from './auth.service.js';
+import { LocalLoginDto, RotateLocalAdminPasswordDto } from './dto.js';
 import { Public } from './public.decorator.js';
 import { clearSessionCookie } from './cookie.util.js';
 
@@ -53,6 +55,43 @@ export class AuthController {
     res.redirect(completed.redirectTo);
   }
 
+  @Post('local-login')
+  @Public()
+  async localLogin(
+    @Body() body: LocalLoginDto,
+    @Req() req: { ip?: string; headers: Record<string, string | undefined> },
+    @Res()
+    res: {
+      header: (name: string, value: string) => void;
+      send: (body: unknown) => void;
+    },
+  ): Promise<void> {
+    const completed = await this.authService.localAdminLogin(
+      body.username,
+      body.password,
+      req.ip,
+      req.headers['user-agent'],
+    );
+
+    res.header('Set-Cookie', completed.cookie);
+    res.send({
+      ok: true,
+      redirectTo: body.returnTo ?? completed.redirectTo,
+      mustRotatePassword: completed.mustRotatePassword,
+    });
+  }
+
+  @Post('local-admin/password')
+  @UseGuards(AuthGuard)
+  async rotateLocalAdminPassword(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Body() body: RotateLocalAdminPasswordDto,
+    @Res() res: { send: (body: unknown) => void },
+  ): Promise<void> {
+    await this.authService.rotateLocalAdminPassword(actor, body.currentPassword, body.newPassword);
+    res.send({ ok: true });
+  }
+
   @Post('logout')
   @UseGuards(AuthGuard)
   async logout(
@@ -74,6 +113,8 @@ export class AuthController {
         email: actor.email,
         organizationId: actor.organizationId,
         permissions: actor.permissions,
+        isLocalAdmin: actor.isLocalAdmin ?? false,
+        mustRotatePassword: actor.mustRotatePassword ?? false,
       },
       sessionId: actor.sessionId,
     };

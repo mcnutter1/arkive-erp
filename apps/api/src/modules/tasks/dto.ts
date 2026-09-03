@@ -1,6 +1,8 @@
 import { Transform } from 'class-transformer';
 import { IsOptional, IsString, IsUUID } from 'class-validator';
 
+import { PaginationDto } from '../common/pagination.dto.js';
+
 export class CreateTaskDto {
   @IsString()
   title!: string;
@@ -16,4 +18,10 @@ export class CreateTaskDto {
   @IsOptional()
   @Transform(({ value }) => (value ? new Date(value) : undefined))
   dueAt?: Date;
+}
+
+export class ListTasksQueryDto extends PaginationDto {
+  @IsOptional()
+  @IsString()
+  search?: string;
 }

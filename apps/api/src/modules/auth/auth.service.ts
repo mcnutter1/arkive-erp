@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
 
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -7,6 +7,14 @@ import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { PrismaService } from '../common/prisma.service.js';
 import { AuthenticatedUser } from './auth.types.js';
 import { makeSessionCookie, parseCookie, SESSION_COOKIE_NAME } from './cookie.util.js';
+
+type LocalAdminSetting = {
+  username?: string;
+  email?: string;
+  passwordHash?: string;
+  passwordSalt?: string;
+  rotatedAt?: string;
+};
 
 @Injectable()
 export class AuthService {
@@ -17,6 +25,139 @@ export class AuthService {
 
   private sha256(input: string): string {
     return createHash('sha256').update(input).digest('hex');
+  }
+
+  private isLocalLoginEnabled(): boolean {
+    return (this.config.get<string>('AUTH_LOCAL_LOGIN_ENABLED') ?? 'true') === 'true';
+  }
+
+  private getLocalAdminUsername(): string {
+    return this.config.get<string>('AUTH_LOCAL_ADMIN_USERNAME') ?? 'admin';
+  }
+
+  private getLocalAdminPassword(): string {
+    return this.config.get<string>('AUTH_LOCAL_ADMIN_PASSWORD') ?? 'admin';
+  }
+
+  private getLocalAdminEmail(): string {
+    return this.config.get<string>('AUTH_LOCAL_ADMIN_EMAIL') ?? 'admin@local.arkive';
+  }
+
+  private getLocalAdminStoredSettingKey() {
+    return {
+      section: 'auth',
+      key: 'localAdmin',
+    };
+  }
+
+  private hashPassword(password: string, salt: string): string {
+    return scryptSync(password, salt, 64).toString('hex');
+  }
+
+  private passwordMatches(password: string, salt: string, expectedHash: string): boolean {
+    const actualHash = this.hashPassword(password, salt);
+    const actualBuffer = Buffer.from(actualHash, 'hex');
+    const expectedBuffer = Buffer.from(expectedHash, 'hex');
+
+    if (actualBuffer.length !== expectedBuffer.length) {
+      return false;
+    }
+
+    return timingSafeEqual(actualBuffer, expectedBuffer);
+  }
+
+  private async getLocalAdminSetting(organizationId: string): Promise<LocalAdminSetting | null> {
+    const selector = this.getLocalAdminStoredSettingKey();
+    const setting = await this.prisma.systemSetting.findFirst({
+      where: {
+        organizationId,
+        section: selector.section,
+        key: selector.key,
+      },
+      select: {
+        value: true,
+      },
+    });
+
+    if (!setting || typeof setting.value !== 'object' || !setting.value) {
+      return null;
+    }
+
+    return setting.value as unknown as LocalAdminSetting;
+  }
+
+  private async saveLocalAdminSetting(
+    organizationId: string,
+    updatedByUserId: string,
+    value: LocalAdminSetting,
+  ): Promise<void> {
+    const selector = this.getLocalAdminStoredSettingKey();
+
+    await this.prisma.systemSetting.upsert({
+      where: {
+        organizationId_section_key: {
+          organizationId,
+          section: selector.section,
+          key: selector.key,
+        },
+      },
+      update: {
+        value,
+        updatedByUserId,
+      },
+      create: {
+        organizationId,
+        section: selector.section,
+        key: selector.key,
+        value,
+        updatedByUserId,
+      },
+    });
+  }
+
+  private async getLocalAdminCredentials(organizationId: string): Promise<{
+    username: string;
+    email: string;
+    plainPassword?: string;
+    passwordHash?: string;
+    passwordSalt?: string;
+    mustRotatePassword: boolean;
+  }> {
+    const stored = await this.getLocalAdminSetting(organizationId);
+    const defaultUsername = this.getLocalAdminUsername();
+    const defaultPassword = this.getLocalAdminPassword();
+    const defaultEmail = this.getLocalAdminEmail();
+
+    const username = stored?.username ?? defaultUsername;
+    const email = stored?.email ?? defaultEmail;
+    const hasStoredHash = typeof stored?.passwordHash === 'string' && typeof stored?.passwordSalt === 'string';
+
+    return {
+      username,
+      email,
+      plainPassword: hasStoredHash ? undefined : defaultPassword,
+      passwordHash: hasStoredHash ? stored?.passwordHash : undefined,
+      passwordSalt: hasStoredHash ? stored?.passwordSalt : undefined,
+      mustRotatePassword: !hasStoredHash && defaultUsername === 'admin' && defaultPassword === 'admin',
+    };
+  }
+
+  private isLocalAdminEmail(email: string): boolean {
+    return this.isLocalLoginEnabled() && email.toLowerCase() === this.getLocalAdminEmail().toLowerCase();
+  }
+
+  private async isLocalAdminUser(userId: string): Promise<boolean> {
+    const user = await this.prisma.user.findFirst({
+      where: { id: userId, archivedAt: null },
+      select: { organizationId: true, email: true },
+    });
+
+    if (!user || !this.isLocalLoginEnabled()) {
+      return false;
+    }
+
+    const local = await this.getLocalAdminCredentials(user.organizationId);
+    return user.email.toLowerCase() === local.email.toLowerCase();
   }
 
   private getAllowedTenants(): string[] {
@@ -64,12 +205,56 @@ export class AuthService {
       .flatMap((ur) => ur.role.rolePermissions.map((rp) => rp.permission.code))
       .filter((value, index, self) => self.indexOf(value) === index);
 
+    const userEmail = user.email;
+    const localAdmin = this.isLocalAdminEmail(userEmail);
+    let mustRotatePassword = false;
+
+    if (localAdmin) {
+      const local = await this.getLocalAdminCredentials(user.organizationId);
+      mustRotatePassword = local.mustRotatePassword;
+    }
+
     return {
       id: user.id,
       organizationId: user.organizationId,
       personId: user.personId ?? undefined,
-      email: user.email,
-      permissions,
+      email: userEmail,
+      permissions: localAdmin ? ['*', ...permissions] : permissions,
+      isLocalAdmin: localAdmin,
+      mustRotatePassword,
+    };
+  }
+
+  private async createSessionForUser(
+    user: { id: string; organizationId: string },
+    ipAddress?: string,
+    userAgent?: string,
+  ): Promise<{ cookie: string }> {
+    const sessionTtlHours = Number(this.config.get<string>('SESSION_TTL_HOURS') ?? '8');
+    const maxAgeSeconds = Math.max(3600, sessionTtlHours * 3600);
+    const sessionToken = randomUUID();
+    const sessionTokenHash = this.sha256(sessionToken);
+    const expiresAt = new Date(Date.now() + maxAgeSeconds * 1000);
+
+    await this.prisma.$transaction([
+      this.prisma.authSession.create({
+        data: {
+          organizationId: user.organizationId,
+          userId: user.id,
+          sessionTokenHash,
+          expiresAt,
+          ipAddress,
+          userAgent,
+        },
+      }),
+      this.prisma.user.update({
+        where: { id: user.id },
+        data: { lastLoginAt: new Date(), status: 'ACTIVE' },
+      }),
+    ]);
+
+    return {
+      cookie: makeSessionCookie(sessionToken, maxAgeSeconds),
     };
   }
 
@@ -226,37 +411,116 @@ export class AuthService {
       throw new UnauthorizedException('User is not registered');
     }
 
-    const sessionTtlHours = Number(this.config.get<string>('SESSION_TTL_HOURS') ?? '8');
-    const maxAgeSeconds = Math.max(3600, sessionTtlHours * 3600);
-    const sessionToken = randomUUID();
-    const sessionTokenHash = this.sha256(sessionToken);
-    const expiresAt = new Date(Date.now() + maxAgeSeconds * 1000);
-
     await this.prisma.$transaction([
       this.prisma.oidcAuthState.update({
         where: { id: stored.id },
         data: { consumedAt: new Date() },
       }),
-      this.prisma.authSession.create({
-        data: {
-          organizationId: user.organizationId,
-          userId: user.id,
-          sessionTokenHash,
-          expiresAt,
-          ipAddress,
-          userAgent,
-        },
-      }),
-      this.prisma.user.update({
-        where: { id: user.id },
-        data: { lastLoginAt: new Date(), status: 'ACTIVE' },
-      }),
     ]);
 
+    const session = await this.createSessionForUser(user, ipAddress, userAgent);
+
     return {
-      cookie: makeSessionCookie(sessionToken, maxAgeSeconds),
+      cookie: session.cookie,
       redirectTo: stored.returnTo ?? this.config.get<string>('APP_BASE_URL') ?? '/',
     };
+  }
+
+  async localAdminLogin(
+    username: string,
+    password: string,
+    ipAddress?: string,
+    userAgent?: string,
+  ): Promise<{ cookie: string; redirectTo: string }> {
+    if (!this.isLocalLoginEnabled()) {
+      throw new UnauthorizedException('Local login is disabled');
+    }
+
+    let org = await this.prisma.organization.findFirst({
+      where: { archivedAt: null },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    if (!org) {
+      org = await this.prisma.organization.create({
+        data: {
+          code: 'default',
+          name: 'Default Organization',
+        },
+      });
+    }
+
+    const localAdmin = await this.getLocalAdminCredentials(org.id);
+
+    if (username !== localAdmin.username) {
+      throw new UnauthorizedException('Invalid username or password');
+    }
+
+    if (localAdmin.passwordHash && localAdmin.passwordSalt) {
+      if (!this.passwordMatches(password, localAdmin.passwordSalt, localAdmin.passwordHash)) {
+        throw new UnauthorizedException('Invalid username or password');
+      }
+    } else if (password !== (localAdmin.plainPassword ?? '')) {
+      throw new UnauthorizedException('Invalid username or password');
+    }
+
+    let user = await this.prisma.user.findFirst({
+      where: {
+        organizationId: org.id,
+        email: localAdmin.email,
+        archivedAt: null,
+      },
+    });
+
+    if (!user) {
+      user = await this.prisma.user.create({
+        data: {
+          organizationId: org.id,
+          email: localAdminEmail,
+          status: 'ACTIVE',
+        },
+      });
+    }
+
+    const session = await this.createSessionForUser(user, ipAddress, userAgent);
+
+    return {
+      cookie: session.cookie,
+      redirectTo: this.config.get<string>('APP_BASE_URL') ?? '/',
+      mustRotatePassword: localAdmin.mustRotatePassword,
+    };
+  }
+
+  async rotateLocalAdminPassword(
+    actor: AuthenticatedUser,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<void> {
+    if (!actor.isLocalAdmin || !(await this.isLocalAdminUser(actor.id))) {
+      throw new UnauthorizedException('Local admin access required');
+    }
+
+    const local = await this.getLocalAdminCredentials(actor.organizationId);
+
+    const currentMatches =
+      local.passwordHash && local.passwordSalt
+        ? this.passwordMatches(currentPassword, local.passwordSalt, local.passwordHash)
+        : currentPassword === (local.plainPassword ?? '');
+
+    if (!currentMatches) {
+      throw new UnauthorizedException('Current password is incorrect');
+    }
+
+    const salt = randomBytes(16).toString('hex');
+    const passwordHash = this.hashPassword(newPassword, salt);
+
+    await this.saveLocalAdminSetting(actor.organizationId, actor.id, {
+      username: local.username,
+      email: local.email,
+      passwordHash,
+      passwordSalt: salt,
+      rotatedAt: new Date().toISOString(),
+    });
   }
 
   async verifyAccessToken(token: string): Promise<Record<string, unknown>> {

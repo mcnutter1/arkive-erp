@@ -1,5 +1,7 @@
 import { IsInt, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
 
+import { PaginationDto } from '../common/pagination.dto.js';
+
 export class CreateDocumentDto {
   @IsString()
   category!: string;
@@ -39,4 +41,10 @@ export class FinalizeDocumentVersionDto {
   @IsInt()
   @Min(1)
   byteSize!: number;
+}
+
+export class ListDocumentsQueryDto extends PaginationDto {
+  @IsOptional()
+  @IsString()
+  search?: string;
 }

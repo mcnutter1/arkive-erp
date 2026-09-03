@@ -10,15 +10,19 @@ Implemented v1 endpoints:
 
 - `GET /api/v1/auth/login`
 - `GET /api/v1/auth/callback`
+- `POST /api/v1/auth/local-login`
+- `POST /api/v1/auth/local-admin/password`
 - `POST /api/v1/auth/logout`
 - `GET /api/v1/auth/session`
 - `GET /api/v1/system/me`
 - `GET /api/v1/people`
 - `POST /api/v1/people`
 - `POST /api/v1/people/engagements`
+- `GET /api/v1/documents`
 - `POST /api/v1/documents`
 - `POST /api/v1/documents/upload-url`
 - `POST /api/v1/documents/:documentId/versions`
+- `GET /api/v1/documents/:documentId/versions`
 - `GET /api/v1/documents/versions/:documentVersionId/download-url`
 - `POST /api/v1/signatures/requests`
 - `GET /api/v1/signatures/my-requests`
@@ -41,6 +45,7 @@ Implemented v1 endpoints:
 - `GET /api/v1/valuations`
 - `POST /api/v1/valuations`
 - `POST /api/v1/tasks`
+- `GET /api/v1/tasks`
 - `GET /api/v1/tasks/my-notifications`
 - `GET /api/v1/approvals/requests`
 - `POST /api/v1/approvals/requests`

@@ -1,17 +1,34 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 
 import { AuthGuard } from '../auth/auth.guard.js';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import { AuthenticatedUser } from '../auth/auth.types.js';
 import { RequirePermissions } from '../authorization/permissions.decorator.js';
 import { PermissionsGuard } from '../authorization/permissions.guard.js';
-import { CreateDocumentDto, CreateUploadUrlDto, FinalizeDocumentVersionDto } from './dto.js';
+import {
+  CreateDocumentDto,
+  CreateUploadUrlDto,
+  FinalizeDocumentVersionDto,
+  ListDocumentsQueryDto,
+} from './dto.js';
 import { DocumentsService } from './documents.service.js';
 
 @Controller({ path: 'documents', version: '1' })
 @UseGuards(AuthGuard, PermissionsGuard)
 export class DocumentsController {
   constructor(private readonly documentsService: DocumentsService) {}
+
+  @Get()
+  @RequirePermissions('documents.read')
+  listDocuments(@CurrentUser() actor: AuthenticatedUser, @Query() query: ListDocumentsQueryDto) {
+    return this.documentsService.listDocuments(actor, query);
+  }
+
+  @Get(':documentId/versions')
+  @RequirePermissions('documents.read')
+  listVersions(@CurrentUser() actor: AuthenticatedUser, @Param('documentId') documentId: string) {
+    return this.documentsService.listVersions(actor, documentId);
+  }
 
   @Post()
   @RequirePermissions('documents.write')

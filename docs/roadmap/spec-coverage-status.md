@@ -4,7 +4,7 @@ Date: 2026-09-02
 
 ## Summary
 
-The full ERP specification is not yet complete. The repository currently contains Phase 0, a partial Phase 1 security implementation, and a native e-signature foundation.
+The full ERP specification is not yet complete. The repository now includes a deployable authenticated web shell with working module flows for people, tasks, documents, fundraising scenarios, valuations/reports, approvals, equity ledger entry, M365 jobs, portal summary, search/timeline, and admin settings, plus partial Phase 1 security foundations.
 
 ## Completed or partially completed
 
@@ -17,9 +17,20 @@ The full ERP specification is not yet complete. The repository currently contain
 - Installer FQDN prompt + Let's Encrypt certificate wait: completed
 - Global auth guard, permissions guard, request context, and audit interceptor foundations: partial
 - OIDC state/nonce login and callback plus secure session-cookie lifecycle foundation: partial
+- Local bootstrap login with first-run password rotation: completed
 - Record-level document sharing and access policy enforcement foundation: partial
 - Native e-sign request/participant lifecycle API foundation: partial
 - People, documents, tasks/notifications, equity ledger, fundraising, and valuations API foundations: partial
+- Authenticated web app shell and module navigation: completed
+- People workflow (list/create) via web UI + API: completed
+- Tasks workflow (list/create) via web UI + API: completed
+- Documents workflow (create/upload/finalize/list/download URL) via web UI + API: completed
+- Fundraising workflow (rounds/scenarios/simulate) via web UI + API: completed
+- Valuations and reporting workflow (list/create/cap-table/CSV exports) via web UI + API: completed
+- Approvals workflow (request/decision/list) via web UI + API: completed
+- Equity ledger workflow (list/create transaction) via web UI + API: completed
+- M365 provisioning jobs workflow (queue/list) via web UI + API: completed
+- Portal summary, search/timeline, and admin settings via web UI + API: completed
 - Vesting preview engine and grant-based vesting calculations: partial
 - Exercise request and termination workflow API foundations: partial
 - Exercise request lifecycle transitions (submit/approve/decline/cancel/complete with completion-time ledger write): partial

@@ -159,7 +159,12 @@ prompt_for_domain_and_acme() {
   set_env_var "APP_BASE_URL" "https://$fqdn"
   set_env_var "API_CORS_ORIGIN" "https://$fqdn"
   set_env_var "NEXT_PUBLIC_API_BASE_URL" "https://$fqdn/api/v1"
+  set_env_var "INTERNAL_API_BASE_URL" "http://api:4000/api/v1"
   set_env_var "ENTRA_REDIRECT_URI" "https://$fqdn/api/v1/auth/callback"
+  set_env_var "AUTH_LOCAL_LOGIN_ENABLED" "true"
+  set_env_var "AUTH_LOCAL_ADMIN_USERNAME" "admin"
+  set_env_var "AUTH_LOCAL_ADMIN_PASSWORD" "admin"
+  set_env_var "AUTH_LOCAL_ADMIN_EMAIL" "admin@local.arkive"
 
   PUBLIC_DOMAIN="$fqdn"
   ACME_EMAIL="$email"
