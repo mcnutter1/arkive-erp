@@ -23,7 +23,13 @@ echo "[restore] restoring postgres"
 cat "$BACKUP_PATH/postgres.sql" | docker compose exec -T postgres psql -U "$POSTGRES_USER" "$POSTGRES_DB"
 
 echo "[restore] restoring object storage"
-cat "$BACKUP_PATH/minio-data.tar.gz" | docker compose exec -T minio sh -c "tar xzf - -C /"
+MINIO_CONTAINER_ID="$(docker compose ps -q minio)"
+if [[ -z "$MINIO_CONTAINER_ID" ]]; then
+  echo "MinIO container is not running. Start services and retry restore." >&2
+  exit 1
+fi
+docker compose exec -T minio sh -c "rm -rf /data/*"
+gzip -dc "$BACKUP_PATH/minio-data.tar.gz" | docker cp - "$MINIO_CONTAINER_ID":/
 
 echo "[restore] restoring .env"
 cp "$BACKUP_PATH/env.backup" "$ROOT_DIR/.env"

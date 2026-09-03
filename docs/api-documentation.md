@@ -30,6 +30,13 @@ Implemented v1 endpoints:
 - `POST /api/v1/signatures/participants/:participantId/decline`
 - `GET /api/v1/equity/ledger`
 - `POST /api/v1/equity/ledger`
+- `GET /api/v1/equity/dashboard`
+- `GET /api/v1/equity/plans`
+- `POST /api/v1/equity/plans`
+- `GET /api/v1/equity/grants`
+- `GET /api/v1/equity/grants/:grantId`
+- `POST /api/v1/equity/grants`
+- `GET /api/v1/equity/grants/:grantId/letter`
 - `GET /api/v1/vesting/grants/:grantId/preview`
 - `POST /api/v1/equity/lifecycle/terminations`
 - `POST /api/v1/equity/lifecycle/exercise-requests`

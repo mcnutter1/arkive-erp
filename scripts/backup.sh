@@ -22,7 +22,12 @@ echo "[backup] postgres"
 docker compose exec -T postgres pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" > "$TARGET/postgres.sql"
 
 echo "[backup] object storage"
-docker compose exec -T minio sh -c "tar czf - /data" > "$TARGET/minio-data.tar.gz"
+MINIO_CONTAINER_ID="$(docker compose ps -q minio)"
+if [[ -z "$MINIO_CONTAINER_ID" ]]; then
+  echo "MinIO container is not running. Start services and retry backup." >&2
+  exit 1
+fi
+docker cp "$MINIO_CONTAINER_ID":/data - | gzip -c > "$TARGET/minio-data.tar.gz"
 
 echo "[backup] config"
 cp "$ROOT_DIR/.env" "$TARGET/env.backup"
