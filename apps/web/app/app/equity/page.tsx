@@ -1,7 +1,7 @@
 "use client";
 
 import Link from 'next/link';
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, ReactNode, useEffect, useMemo, useState } from 'react';
 
 import { readApiError } from '../_utils/read-api-error';
 
@@ -126,6 +126,8 @@ type PlanFormState = {
   expiryDate: string;
 };
 
+type ModalView = 'grant' | 'plan' | 'openingBalance' | 'manualTxn' | 'baseShares' | null;
+
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? '/api/v1';
 const companyTreasuryValue = '__COMPANY__';
 
@@ -215,6 +217,70 @@ function defaultPlanForm(): PlanFormState {
   };
 }
 
+function Modal({
+  open,
+  title,
+  description,
+  onClose,
+  children,
+}: {
+  open: boolean;
+  title: string;
+  description?: string;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    function onEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    }
+
+    document.addEventListener('keydown', onEscape);
+    return () => {
+      document.removeEventListener('keydown', onEscape);
+    };
+  }, [onClose, open]);
+
+  if (!open) {
+    return null;
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4"
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-3xl rounded-2xl border border-slate-200 bg-white shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-4">
+          <div>
+            <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
+            {description ? <p className="mt-1 text-sm text-slate-600">{description}</p> : null}
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-700 hover:bg-slate-100"
+          >
+            Close
+          </button>
+        </div>
+        <div className="max-h-[80vh] overflow-y-auto p-5">{children}</div>
+      </div>
+    </div>
+  );
+}
+
 export default function EquityPage() {
   const [activeTab, setActiveTab] = useState<'overview' | 'grants' | 'operations'>('overview');
   const [loading, setLoading] = useState(false);
@@ -236,6 +302,7 @@ export default function EquityPage() {
   const [savingOpeningBalance, setSavingOpeningBalance] = useState(false);
   const [savingTxn, setSavingTxn] = useState(false);
   const [showBaseEditor, setShowBaseEditor] = useState(false);
+  const [modalView, setModalView] = useState<ModalView>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -332,6 +399,57 @@ export default function EquityPage() {
   useEffect(() => {
     void loadData();
   }, []);
+
+  useEffect(() => {
+    if (!modalView) {
+      return;
+    }
+
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [modalView]);
+
+  function openCreateGrantModal() {
+    setEditingGrantId(null);
+    setGrantForm(defaultGrantForm());
+    setModalView('grant');
+    setActiveTab('grants');
+    setError(null);
+    setNotice(null);
+  }
+
+  function openCreatePlanModal() {
+    setPlanForm(defaultPlanForm());
+    setModalView('plan');
+    setActiveTab('operations');
+    setError(null);
+    setNotice(null);
+  }
+
+  function openOpeningBalanceModal() {
+    setModalView('openingBalance');
+    setActiveTab('operations');
+    setError(null);
+    setNotice(null);
+  }
+
+  function openManualTxnModal() {
+    setModalView('manualTxn');
+    setActiveTab('operations');
+    setError(null);
+    setNotice(null);
+  }
+
+  function openBaseSharesModal() {
+    setModalView('baseShares');
+    setActiveTab('overview');
+    setError(null);
+    setNotice(null);
+  }
 
   async function onSubmitGrant(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -455,6 +573,7 @@ export default function EquityPage() {
       setNotice(editingGrantId ? 'Grant updated successfully.' : 'Grant created successfully.');
       setEditingGrantId(null);
       setGrantForm(defaultGrantForm());
+      setModalView(null);
       await loadData();
     } catch {
       setError(editingGrantId ? 'Unable to update grant.' : 'Unable to create grant.');
@@ -481,6 +600,7 @@ export default function EquityPage() {
       notes: '',
     });
     setActiveTab('grants');
+    setModalView('grant');
     setError(null);
     setNotice('Editing grant. Save to apply changes.');
   }
@@ -488,6 +608,7 @@ export default function EquityPage() {
   function cancelGrantEdit() {
     setEditingGrantId(null);
     setGrantForm(defaultGrantForm());
+    setModalView(null);
     setError(null);
   }
 
@@ -552,6 +673,7 @@ export default function EquityPage() {
       const payload = (await response.json()) as CapTableResponse;
       setCapTable(payload);
       setShowBaseEditor(false);
+      setModalView(null);
       setNotice('Base outstanding shares saved.');
     } catch {
       setError('Unable to update base outstanding shares.');
@@ -612,6 +734,7 @@ export default function EquityPage() {
 
       setNotice('Opening holder balance recorded.');
       event.currentTarget.reset();
+      setModalView(null);
       await loadData();
     } catch {
       setError('Unable to record opening balance.');
@@ -678,6 +801,7 @@ export default function EquityPage() {
 
       setNotice(isEditing ? 'Plan pool updated.' : 'Plan created.');
       setPlanForm(defaultPlanForm());
+      setModalView(null);
       await loadData();
     } catch {
       setError(isEditing ? 'Unable to update plan.' : 'Unable to create plan.');
@@ -697,12 +821,14 @@ export default function EquityPage() {
       expiryDate: toDateInputValue(plan.expiryDate),
     });
     setActiveTab('operations');
+    setModalView('plan');
     setError(null);
     setNotice('Editing option pool details for selected plan.');
   }
 
   function resetPlanEditor() {
     setPlanForm(defaultPlanForm());
+    setModalView(null);
     setError(null);
   }
 
@@ -764,6 +890,7 @@ export default function EquityPage() {
 
       setNotice('Manual ledger transaction recorded.');
       event.currentTarget.reset();
+      setModalView(null);
       await loadData();
     } catch {
       setError('Unable to create ledger transaction.');
@@ -781,73 +908,98 @@ export default function EquityPage() {
   }
 
   return (
-    <section className="space-y-5">
-      <header className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+    <section className="space-y-6">
+      <header className="overflow-hidden rounded-3xl border border-amber-200 bg-gradient-to-r from-amber-100 via-white to-cyan-100 p-5 shadow-sm md:p-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h1 className="text-xl font-semibold">Equity Workspace</h1>
-            <p className="mt-1 text-sm text-slate-600">Cap table, grants, and pool management in one streamlined workspace.</p>
+            <p className="text-xs uppercase tracking-[0.2em] text-slate-600">Equity Control Center</p>
+            <h1 className="mt-1 text-2xl font-semibold text-slate-900">Equity Workspace</h1>
+            <p className="mt-2 max-w-2xl text-sm text-slate-700">
+              Keep the cap table reliable with clean grant workflows, controlled pool edits, and a full ledger trail.
+            </p>
           </div>
-          <button
-            type="button"
-            onClick={() => void loadData()}
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50"
-          >
-            {loading ? 'Refreshing...' : 'Refresh'}
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={openCreateGrantModal}
+              className="rounded-lg bg-slate-900 px-3 py-2 text-sm text-white hover:bg-slate-800"
+            >
+              New Grant
+            </button>
+            <button
+              type="button"
+              onClick={openCreatePlanModal}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+            >
+              Manage Pool
+            </button>
+            <button
+              type="button"
+              onClick={openManualTxnModal}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+            >
+              Record Entry
+            </button>
+            <button
+              type="button"
+              onClick={() => void loadData()}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+            >
+              {loading ? 'Refreshing...' : 'Refresh'}
+            </button>
+          </div>
         </div>
+      </header>
 
-        <div className="mt-4 flex flex-wrap gap-2">
+      {error ? (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">{error}</div>
+      ) : null}
+      {notice ? (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{notice}</div>
+      ) : null}
+
+      <nav className="rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
+        <div className="flex flex-wrap gap-2">
           <button
             type="button"
             onClick={() => setActiveTab('overview')}
-            className={`rounded-lg px-3 py-1.5 text-sm ${activeTab === 'overview' ? 'bg-slate-900 text-white' : 'border border-slate-300 text-slate-700 hover:bg-slate-50'}`}
+            className={`rounded-lg px-3 py-1.5 text-sm ${activeTab === 'overview' ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'}`}
           >
             Overview
           </button>
           <button
             type="button"
             onClick={() => setActiveTab('grants')}
-            className={`rounded-lg px-3 py-1.5 text-sm ${activeTab === 'grants' ? 'bg-slate-900 text-white' : 'border border-slate-300 text-slate-700 hover:bg-slate-50'}`}
+            className={`rounded-lg px-3 py-1.5 text-sm ${activeTab === 'grants' ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'}`}
           >
             Grant Registry
           </button>
           <button
             type="button"
             onClick={() => setActiveTab('operations')}
-            className={`rounded-lg px-3 py-1.5 text-sm ${activeTab === 'operations' ? 'bg-slate-900 text-white' : 'border border-slate-300 text-slate-700 hover:bg-slate-50'}`}
+            className={`rounded-lg px-3 py-1.5 text-sm ${activeTab === 'operations' ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'}`}
           >
             Operations
           </button>
         </div>
-      </header>
+      </nav>
 
       {activeTab === 'overview' ? (
-        <>
-          {dashboard ? (
-            <article className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <p className="text-xs uppercase tracking-wide text-slate-500">Outstanding Options</p>
-                <p className="mt-2 text-2xl font-semibold text-slate-900">{formatShares(dashboard.cards.outstandingOptions)}</p>
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <p className="text-xs uppercase tracking-wide text-slate-500">Outstanding RSUs</p>
-                <p className="mt-2 text-2xl font-semibold text-slate-900">{formatShares(dashboard.cards.outstandingRsus)}</p>
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <p className="text-xs uppercase tracking-wide text-slate-500">Exercised</p>
-                <p className="mt-2 text-2xl font-semibold text-slate-900">{formatShares(dashboard.cards.exercised)}</p>
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <p className="text-xs uppercase tracking-wide text-slate-500">Forfeited</p>
-                <p className="mt-2 text-2xl font-semibold text-slate-900">{formatShares(dashboard.cards.forfeited)}</p>
-              </div>
-            </article>
-          ) : null}
-
+        <div className="grid gap-5 xl:grid-cols-[1.35fr_1fr]">
           <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="text-lg font-semibold">Cap Table</h2>
-            <p className="mt-1 text-sm text-slate-600">Live shares, dilution, option pool, and holder balances.</p>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900">Cap Table Snapshot</h2>
+                <p className="mt-1 text-sm text-slate-600">Live dilution, pool status, and holder balances.</p>
+              </div>
+              <button
+                type="button"
+                onClick={openBaseSharesModal}
+                className="rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-100"
+              >
+                {hasBaseShares ? 'Update Base Shares' : 'Set Base Shares'}
+              </button>
+            </div>
 
             {capTableLoadError ? (
               <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
@@ -855,9 +1007,15 @@ export default function EquityPage() {
               </p>
             ) : null}
 
-            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {showBaseEditor ? (
+              <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                Base outstanding shares are not configured yet.
+              </div>
+            ) : null}
+
+            <div className="mt-4 grid gap-3 md:grid-cols-3">
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <p className="text-xs uppercase tracking-wide text-slate-500">Base Outstanding Shares</p>
+                <p className="text-xs uppercase tracking-wide text-slate-500">Base Outstanding</p>
                 <p className="mt-1 text-lg font-semibold text-slate-900">{formatShares(capTableView.shares.baseOutstandingShares)}</p>
               </div>
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
@@ -865,7 +1023,7 @@ export default function EquityPage() {
                 <p className="mt-1 text-lg font-semibold text-slate-900">{formatShares(capTableView.shares.equityInstrumentsOutstanding)}</p>
               </div>
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <p className="text-xs uppercase tracking-wide text-slate-500">Fully Diluted Shares</p>
+                <p className="text-xs uppercase tracking-wide text-slate-500">Fully Diluted</p>
                 <p className="mt-1 text-lg font-semibold text-slate-900">{formatShares(capTableView.shares.fullyDilutedShares)}</p>
               </div>
             </div>
@@ -889,42 +1047,10 @@ export default function EquityPage() {
               </div>
             </div>
 
-            {hasBaseShares && !showBaseEditor ? (
-              <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
-                <p className="text-sm text-emerald-900">Base outstanding shares are configured.</p>
-                <button
-                  type="button"
-                  onClick={() => setShowBaseEditor(true)}
-                  className="rounded-md border border-emerald-300 px-2 py-1 text-xs text-emerald-800 hover:bg-emerald-100"
-                >
-                  Change Base Shares
-                </button>
-              </div>
-            ) : (
-              <form className="mt-4 grid gap-3 rounded-xl border border-slate-200 p-4 md:grid-cols-3" onSubmit={onUpdateCapTableBase}>
-                <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500 md:col-span-2">
-                  <span>Base Outstanding Shares</span>
-                  <input
-                    name="outstandingShares"
-                    defaultValue={capTableView.shares.baseOutstandingShares}
-                    placeholder="10000000"
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
-                  />
-                </label>
-                <button
-                  type="submit"
-                  disabled={savingCapTableBase}
-                  className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:opacity-60"
-                >
-                  {savingCapTableBase ? 'Saving...' : hasBaseShares ? 'Update Base' : 'Set Base'}
-                </button>
-              </form>
-            )}
-
             <div className="mt-5">
               <h3 className="text-sm font-semibold text-slate-900">Outstanding by Holder</h3>
               {capTableView.holders.length === 0 ? (
-                <p className="mt-2 text-sm text-slate-600">No holder balances yet. Use the Operations tab to add opening balances.</p>
+                <p className="mt-2 text-sm text-slate-600">No holder balances yet. Add opening balances from Operations.</p>
               ) : (
                 <div className="mt-2 overflow-x-auto">
                   <table className="min-w-full text-left text-sm">
@@ -947,68 +1073,180 @@ export default function EquityPage() {
               )}
             </div>
           </article>
-        </>
+
+          <article className="space-y-4">
+            {dashboard ? (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">Outstanding Options</p>
+                  <p className="mt-2 text-2xl font-semibold text-slate-900">{formatShares(dashboard.cards.outstandingOptions)}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">Outstanding RSUs</p>
+                  <p className="mt-2 text-2xl font-semibold text-slate-900">{formatShares(dashboard.cards.outstandingRsus)}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">Exercised</p>
+                  <p className="mt-2 text-2xl font-semibold text-slate-900">{formatShares(dashboard.cards.exercised)}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">Forfeited</p>
+                  <p className="mt-2 text-2xl font-semibold text-slate-900">{formatShares(dashboard.cards.forfeited)}</p>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <h3 className="text-sm font-semibold text-slate-900">Latest Activity</h3>
+              {!dashboard || dashboard.timeline.length === 0 ? (
+                <p className="mt-2 text-sm text-slate-600">No activity yet.</p>
+              ) : (
+                <ul className="mt-3 space-y-2">
+                  {dashboard.timeline.slice(0, 8).map((event, index) => (
+                    <li key={`${event.date}-${event.type}-${index}`} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                      <p className="text-xs uppercase tracking-wide text-slate-500">{event.type}</p>
+                      <p className="mt-1 text-sm font-medium text-slate-900">{event.title}</p>
+                      <p className="text-xs text-slate-600">{event.subtitle}</p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </article>
+        </div>
       ) : null}
 
       {activeTab === 'grants' ? (
-        <div className="grid gap-5 xl:grid-cols-[1.4fr_1fr]">
+        <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-900">Grant Registry</h2>
+              <p className="mt-1 text-sm text-slate-600">{grants.length} grants recorded across all plans.</p>
+            </div>
+            <button
+              type="button"
+              onClick={openCreateGrantModal}
+              className="rounded-lg bg-slate-900 px-3 py-2 text-sm text-white hover:bg-slate-800"
+            >
+              Create Grant
+            </button>
+          </div>
+
+          {grants.length === 0 ? (
+            <p className="mt-4 text-sm text-slate-600">No grants recorded yet.</p>
+          ) : (
+            <div className="mt-4 overflow-x-auto">
+              <table className="min-w-full text-left text-sm">
+                <thead className="text-xs uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th className="pb-2 pr-4">Recipient</th>
+                    <th className="pb-2 pr-4">Award</th>
+                    <th className="pb-2 pr-4">Quantity</th>
+                    <th className="pb-2 pr-4">Plan</th>
+                    <th className="pb-2 pr-4">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {grants.map((grant) => (
+                    <tr key={grant.id} className="border-t border-slate-200">
+                      <td className="py-3 pr-4">
+                        <p className="font-medium text-slate-900">
+                          {grant.person.legalFirstName} {grant.person.legalLastName}
+                        </p>
+                        <p className="text-xs text-slate-500">{grant.person.primaryEmail ?? 'No email'}</p>
+                      </td>
+                      <td className="py-3 pr-4">
+                        <p>{grant.awardType}</p>
+                        <p className="text-xs text-slate-500">
+                          {grant.exercisePrice ? `${formatShares(grant.exercisePrice)} ${grant.currency}` : 'No exercise price'}
+                        </p>
+                      </td>
+                      <td className="py-3 pr-4">{formatShares(grant.quantity)}</td>
+                      <td className="py-3 pr-4">{grant.plan ? `${grant.plan.code} - ${grant.plan.name}` : 'Unassigned'}</td>
+                      <td className="py-3 pr-4">
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => startGrantEdit(grant)}
+                            className="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void deleteGrant(grant.id)}
+                            className="rounded-md border border-rose-300 px-2 py-1 text-xs text-rose-700 hover:bg-rose-50"
+                          >
+                            Delete
+                          </button>
+                          <Link
+                            href={`/app/equity/${grant.id}`}
+                            className="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100"
+                          >
+                            Details
+                          </Link>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </article>
+      ) : null}
+
+      {activeTab === 'operations' ? (
+        <div className="grid gap-5 xl:grid-cols-[1.2fr_1fr]">
           <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <h2 className="text-lg font-semibold">Grant Registry</h2>
-                <p className="mt-1 text-sm text-slate-600">{grants.length} grants recorded.</p>
+                <h2 className="text-lg font-semibold text-slate-900">Option Pool Management</h2>
+                <p className="mt-1 text-sm text-slate-600">Create and update equity plans without leaving the table view.</p>
               </div>
+              <button
+                type="button"
+                onClick={openCreatePlanModal}
+                className="rounded-lg bg-slate-900 px-3 py-2 text-sm text-white hover:bg-slate-800"
+              >
+                Add Plan
+              </button>
             </div>
 
-            {grants.length === 0 ? (
-              <p className="mt-4 text-sm text-slate-600">No grants recorded yet.</p>
+            {plans.length === 0 ? (
+              <p className="mt-4 text-sm text-slate-600">No equity plans yet.</p>
             ) : (
               <div className="mt-4 overflow-x-auto">
                 <table className="min-w-full text-left text-sm">
                   <thead className="text-xs uppercase tracking-wide text-slate-500">
                     <tr>
-                      <th className="pb-2 pr-4">Recipient</th>
-                      <th className="pb-2 pr-4">Award</th>
-                      <th className="pb-2 pr-4">Quantity</th>
                       <th className="pb-2 pr-4">Plan</th>
-                      <th className="pb-2 pr-4">Actions</th>
+                      <th className="pb-2 pr-4">Reserved</th>
+                      <th className="pb-2 pr-4">Granted</th>
+                      <th className="pb-2 pr-4">Remaining</th>
+                      <th className="pb-2 pr-4">Status</th>
+                      <th className="pb-2 pr-4">Action</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {grants.map((grant) => (
-                      <tr key={grant.id} className="border-t border-slate-200">
-                        <td className="py-3 pr-4">
-                          <p className="font-medium text-slate-900">{grant.person.legalFirstName} {grant.person.legalLastName}</p>
-                          <p className="text-xs text-slate-500">{grant.person.primaryEmail ?? 'No email'}</p>
+                    {plans.map((plan) => (
+                      <tr key={plan.id} className="border-t border-slate-200">
+                        <td className="py-2 pr-4">
+                          <p className="font-medium text-slate-900">{plan.code}</p>
+                          <p className="text-xs text-slate-500">{plan.name}</p>
                         </td>
-                        <td className="py-3 pr-4">
-                          <p>{grant.awardType}</p>
-                          <p className="text-xs text-slate-500">
-                            {grant.exercisePrice ? `${formatShares(grant.exercisePrice)} ${grant.currency}` : 'No exercise price'}
-                          </p>
-                        </td>
-                        <td className="py-3 pr-4">{formatShares(grant.quantity)}</td>
-                        <td className="py-3 pr-4">{grant.plan ? `${grant.plan.code} - ${grant.plan.name}` : 'Unassigned'}</td>
-                        <td className="py-3 pr-4">
-                          <div className="flex flex-wrap gap-2">
-                            <button
-                              type="button"
-                              onClick={() => startGrantEdit(grant)}
-                              className="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50"
-                            >
-                              Edit
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => void deleteGrant(grant.id)}
-                              className="rounded-md border border-rose-300 px-2 py-1 text-xs text-rose-700 hover:bg-rose-50"
-                            >
-                              Delete
-                            </button>
-                            <Link href={`/app/equity/${grant.id}`} className="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50">
-                              Details
-                            </Link>
-                          </div>
+                        <td className="py-2 pr-4">{formatShares(plan.reservedShares)}</td>
+                        <td className="py-2 pr-4">{formatShares(plan.grantedShares)}</td>
+                        <td className="py-2 pr-4">{formatShares(plan.remainingShares ?? plan.reservedShares)}</td>
+                        <td className="py-2 pr-4">{plan.status}</td>
+                        <td className="py-2 pr-4">
+                          <button
+                            type="button"
+                            onClick={() => startPlanEdit(plan)}
+                            className="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100"
+                          >
+                            Edit
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -1019,455 +1257,40 @@ export default function EquityPage() {
           </article>
 
           <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between gap-2">
-              <h2 className="text-lg font-semibold">{editingGrantId ? 'Edit Grant' : 'Create Grant'}</h2>
-              {editingGrantId ? (
-                <button
-                  type="button"
-                  onClick={cancelGrantEdit}
-                  className="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50"
-                >
-                  Cancel Edit
-                </button>
-              ) : null}
+            <h2 className="text-lg font-semibold text-slate-900">Ledger Operations</h2>
+            <p className="mt-1 text-sm text-slate-600">Record opening balances and manual entries through focused dialogs.</p>
+
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={openOpeningBalanceModal}
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100"
+              >
+                Add Opening Balance
+              </button>
+              <button
+                type="button"
+                onClick={openManualTxnModal}
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100"
+              >
+                Manual Ledger Entry
+              </button>
             </div>
-
-            <form className="mt-4 grid gap-3" onSubmit={onSubmitGrant}>
-              <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-                <span>Recipient</span>
-                <select
-                  value={grantForm.personId}
-                  onChange={(event) => setGrantForm((prev) => ({ ...prev, personId: event.target.value }))}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
-                >
-                  <option value="">Select recipient</option>
-                  {people.map((person) => (
-                    <option key={person.id} value={person.id}>
-                      {person.legalFirstName} {person.legalLastName}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-                  <span>Award Type</span>
-                  <select
-                    value={grantForm.awardType}
-                    onChange={(event) =>
-                      setGrantForm((prev) => ({
-                        ...prev,
-                        awardType: event.target.value as 'OPTION_ISO' | 'OPTION_NSO' | 'RSU',
-                        exercisePrice: event.target.value === 'RSU' ? '' : prev.exercisePrice,
-                      }))
-                    }
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
-                  >
-                    <option value="OPTION_NSO">Option - NSO</option>
-                    <option value="OPTION_ISO">Option - ISO</option>
-                    <option value="RSU">RSU</option>
-                  </select>
-                </label>
-
-                <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-                  <span>Quantity</span>
-                  <input
-                    value={grantForm.quantity}
-                    onChange={(event) => setGrantForm((prev) => ({ ...prev, quantity: event.target.value }))}
-                    placeholder="25000"
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
-                  />
-                </label>
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-                  <span>Source Plan</span>
-                  <select
-                    value={grantForm.planId}
-                    onChange={(event) => setGrantForm((prev) => ({ ...prev, planId: event.target.value }))}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
-                  >
-                    <option value="">No plan selected</option>
-                    {plans.map((plan) => (
-                      <option key={plan.id} value={plan.id}>
-                        {plan.code} - {plan.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-                  <span>Currency</span>
-                  <input
-                    maxLength={3}
-                    value={grantForm.currency}
-                    onChange={(event) => setGrantForm((prev) => ({ ...prev, currency: event.target.value }))}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
-                  />
-                </label>
-              </div>
-
-              {(grantForm.awardType === 'OPTION_NSO' || grantForm.awardType === 'OPTION_ISO') ? (
-                <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-                  <span>Exercise Price</span>
-                  <input
-                    value={grantForm.exercisePrice}
-                    onChange={(event) => setGrantForm((prev) => ({ ...prev, exercisePrice: event.target.value }))}
-                    placeholder="1.50"
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
-                  />
-                </label>
-              ) : null}
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-                  <span>Grant Date</span>
-                  <input
-                    type="date"
-                    value={grantForm.grantDate}
-                    onChange={(event) => setGrantForm((prev) => ({ ...prev, grantDate: event.target.value }))}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
-                  />
-                </label>
-                <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-                  <span>Expiration Date</span>
-                  <input
-                    type="date"
-                    value={grantForm.expirationDate}
-                    onChange={(event) => setGrantForm((prev) => ({ ...prev, expirationDate: event.target.value }))}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
-                  />
-                </label>
-              </div>
-
-              <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-                <span>Vesting Start Date</span>
-                <input
-                  type="date"
-                  value={grantForm.vestingStartDate}
-                  onChange={(event) => setGrantForm((prev) => ({ ...prev, vestingStartDate: event.target.value }))}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
-                />
-              </label>
-
-              <div className="grid gap-3 sm:grid-cols-3">
-                <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-                  <span>Cliff Months</span>
-                  <input
-                    value={grantForm.cliffMonths}
-                    onChange={(event) => setGrantForm((prev) => ({ ...prev, cliffMonths: event.target.value }))}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
-                  />
-                </label>
-                <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-                  <span>Duration Months</span>
-                  <input
-                    value={grantForm.durationMonths}
-                    onChange={(event) => setGrantForm((prev) => ({ ...prev, durationMonths: event.target.value }))}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
-                  />
-                </label>
-                <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-                  <span>Interval Months</span>
-                  <input
-                    value={grantForm.intervalMonths}
-                    onChange={(event) => setGrantForm((prev) => ({ ...prev, intervalMonths: event.target.value }))}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
-                  />
-                </label>
-              </div>
-
-              <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-                <span>Notes</span>
-                <input
-                  value={grantForm.notes}
-                  onChange={(event) => setGrantForm((prev) => ({ ...prev, notes: event.target.value }))}
-                  placeholder="Optional internal notes"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
-                />
-              </label>
-
-              <button
-                type="submit"
-                disabled={savingGrant || people.length === 0}
-                className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:opacity-60"
-              >
-                {savingGrant ? 'Saving...' : editingGrantId ? 'Update Grant' : 'Create Grant'}
-              </button>
-            </form>
-          </article>
-        </div>
-      ) : null}
-
-      {activeTab === 'operations' ? (
-        <div className="grid gap-5 xl:grid-cols-2">
-          <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="text-lg font-semibold">Option Pool Management</h2>
-            <p className="mt-1 text-sm text-slate-600">Create or update plan reserve pools.</p>
-
-            <form className="mt-4 grid gap-3" onSubmit={onSavePlan}>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-                  <span>Plan Code</span>
-                  <input
-                    value={planForm.code}
-                    onChange={(event) => setPlanForm((prev) => ({ ...prev, code: event.target.value }))}
-                    disabled={Boolean(planForm.planId)}
-                    placeholder="2026-OP"
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900 disabled:bg-slate-100"
-                  />
-                </label>
-
-                <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-                  <span>Name</span>
-                  <input
-                    value={planForm.name}
-                    onChange={(event) => setPlanForm((prev) => ({ ...prev, name: event.target.value }))}
-                    placeholder="Employee Option Pool"
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
-                  />
-                </label>
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-                  <span>Reserved Shares</span>
-                  <input
-                    value={planForm.reservedShares}
-                    onChange={(event) => setPlanForm((prev) => ({ ...prev, reservedShares: event.target.value }))}
-                    placeholder="1000000"
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
-                  />
-                </label>
-                <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-                  <span>Status</span>
-                  <select
-                    value={planForm.status}
-                    onChange={(event) => setPlanForm((prev) => ({ ...prev, status: event.target.value }))}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
-                  >
-                    <option value="DRAFT">DRAFT</option>
-                    <option value="ACTIVE">ACTIVE</option>
-                    <option value="PAUSED">PAUSED</option>
-                    <option value="RETIRED">RETIRED</option>
-                  </select>
-                </label>
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-                  <span>Effective Date</span>
-                  <input
-                    type="date"
-                    value={planForm.effectiveDate}
-                    onChange={(event) => setPlanForm((prev) => ({ ...prev, effectiveDate: event.target.value }))}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
-                  />
-                </label>
-                <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-                  <span>Expiry Date</span>
-                  <input
-                    type="date"
-                    value={planForm.expiryDate}
-                    onChange={(event) => setPlanForm((prev) => ({ ...prev, expiryDate: event.target.value }))}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
-                  />
-                </label>
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="submit"
-                  disabled={savingPlan}
-                  className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:opacity-60"
-                >
-                  {savingPlan ? 'Saving...' : planForm.planId ? 'Update Pool' : 'Create Pool'}
-                </button>
-                {planForm.planId ? (
-                  <button
-                    type="button"
-                    onClick={resetPlanEditor}
-                    className="rounded-lg border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50"
-                  >
-                    Cancel Edit
-                  </button>
-                ) : null}
-              </div>
-            </form>
-
-            {plans.length > 0 ? (
-              <div className="mt-4 overflow-x-auto">
-                <table className="min-w-full text-left text-sm">
-                  <thead className="text-xs uppercase tracking-wide text-slate-500">
-                    <tr>
-                      <th className="pb-2 pr-4">Plan</th>
-                      <th className="pb-2 pr-4">Reserved</th>
-                      <th className="pb-2 pr-4">Granted</th>
-                      <th className="pb-2 pr-4">Remaining</th>
-                      <th className="pb-2 pr-4">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {plans.map((plan) => (
-                      <tr key={plan.id} className="border-t border-slate-200">
-                        <td className="py-2 pr-4">
-                          <p className="font-medium text-slate-900">{plan.code}</p>
-                          <p className="text-xs text-slate-500">{plan.name} · {plan.status}</p>
-                        </td>
-                        <td className="py-2 pr-4">{formatShares(plan.reservedShares)}</td>
-                        <td className="py-2 pr-4">{formatShares(plan.grantedShares)}</td>
-                        <td className="py-2 pr-4">{formatShares(plan.remainingShares ?? plan.reservedShares)}</td>
-                        <td className="py-2 pr-4">
-                          <button
-                            type="button"
-                            onClick={() => startPlanEdit(plan)}
-                            className="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50"
-                          >
-                            Edit
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : null}
-          </article>
-
-          <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="text-lg font-semibold">Cap Table Operations</h2>
-            <p className="mt-1 text-sm text-slate-600">Onboard holder balances and post manual corrective entries.</p>
-
-            <form className="mt-4 grid gap-3 rounded-xl border border-slate-200 p-4" onSubmit={onRecordOpeningBalance}>
-              <h3 className="text-sm font-semibold text-slate-900">Add Opening Holder Balance</h3>
-              <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-                <span>Holder</span>
-                <select
-                  name="personId"
-                  required
-                  defaultValue=""
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
-                >
-                  <option value="" disabled>
-                    Select holder
-                  </option>
-                  {people.map((person) => (
-                    <option key={person.id} value={person.id}>
-                      {person.legalFirstName} {person.legalLastName}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-                  <span>Quantity</span>
-                  <input name="quantity" placeholder="500000" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900" />
-                </label>
-                <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-                  <span>Effective Date</span>
-                  <input name="effectiveDate" type="date" defaultValue={dateInputToday()} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900" />
-                </label>
-              </div>
-              <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-                <span>Reason</span>
-                <input
-                  name="reason"
-                  placeholder="Opening cap table balance"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
-                />
-              </label>
-              <button
-                type="submit"
-                disabled={savingOpeningBalance || people.length === 0}
-                className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:opacity-60"
-              >
-                {savingOpeningBalance ? 'Saving...' : 'Record Opening Balance'}
-              </button>
-            </form>
-
-            <details className="mt-4 rounded-xl border border-slate-200 p-4">
-              <summary className="cursor-pointer text-sm font-semibold text-slate-900">Manual Ledger Entry</summary>
-              <form className="mt-3 grid gap-3" onSubmit={onCreateManualTxn}>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-                    <span>Transaction Type</span>
-                    <select name="type" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900">
-                      {['ISSUE', 'VEST', 'EXERCISE', 'CANCEL', 'TRANSFER', 'CONVERT', 'SPLIT', 'REVERSE', 'CORRECT'].map((type) => (
-                        <option key={type} value={type}>
-                          {type}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-                    <span>Effective Date & Time</span>
-                    <input name="effectiveAt" type="datetime-local" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900" />
-                  </label>
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-                    <span>Quantity</span>
-                    <input name="quantity" placeholder="1000" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900" />
-                  </label>
-                  <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-                    <span>Unit Price</span>
-                    <input name="unitPrice" placeholder="Optional" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900" />
-                  </label>
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-                    <span>From Holder</span>
-                    <select name="fromPersonId" defaultValue={companyTreasuryValue} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900">
-                      <option value={companyTreasuryValue}>Company Treasury</option>
-                      {people.map((person) => (
-                        <option key={person.id} value={person.id}>
-                          {person.legalFirstName} {person.legalLastName}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-                    <span>To Holder</span>
-                    <select name="toPersonId" defaultValue={companyTreasuryValue} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900">
-                      <option value={companyTreasuryValue}>Company Treasury</option>
-                      {people.map((person) => (
-                        <option key={person.id} value={person.id}>
-                          {person.legalFirstName} {person.legalLastName}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-
-                <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-                  <span>Reason</span>
-                  <input name="reason" placeholder="Why this is needed" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900" />
-                </label>
-
-                <button
-                  type="submit"
-                  disabled={savingTxn}
-                  className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:opacity-60"
-                >
-                  {savingTxn ? 'Saving...' : 'Record Transaction'}
-                </button>
-              </form>
-            </details>
 
             <div className="mt-4">
               <h3 className="text-sm font-semibold text-slate-900">Recent Ledger Entries</h3>
               {txns.length === 0 ? (
                 <p className="mt-2 text-sm text-slate-600">No ledger entries yet.</p>
               ) : (
-                <ul className="mt-2 max-h-[260px] divide-y divide-slate-200 overflow-y-auto">
-                  {txns.slice(-25).reverse().map((txn) => (
+                <ul className="mt-2 max-h-[460px] divide-y divide-slate-200 overflow-y-auto">
+                  {txns.slice(-40).reverse().map((txn) => (
                     <li key={txn.id} className="py-2 text-sm">
-                      <p className="font-medium text-slate-900">#{txn.ledgerSequence} {txn.type} {formatShares(txn.quantity)}</p>
+                      <p className="font-medium text-slate-900">
+                        #{txn.ledgerSequence} {txn.type} {formatShares(txn.quantity)}
+                      </p>
                       <p className="text-slate-600">
-                        {new Date(txn.effectiveAt).toLocaleString()} · From: {renderHolder(txn.fromPersonId)} · To: {renderHolder(txn.toPersonId)}
+                        {new Date(txn.effectiveAt).toLocaleString()} · From: {renderHolder(txn.fromPersonId)} · To:{' '}
+                        {renderHolder(txn.toPersonId)}
                       </p>
                     </li>
                   ))}
@@ -1478,8 +1301,493 @@ export default function EquityPage() {
         </div>
       ) : null}
 
-      {error ? <p className="text-sm text-rose-700">{error}</p> : null}
-      {notice ? <p className="text-sm text-emerald-700">{notice}</p> : null}
+      <Modal
+        open={modalView === 'baseShares'}
+        title={hasBaseShares ? 'Update Base Outstanding Shares' : 'Set Base Outstanding Shares'}
+        description="These shares are used in the fully diluted cap table calculation."
+        onClose={() => setModalView(null)}
+      >
+        <form className="grid gap-3" onSubmit={onUpdateCapTableBase}>
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Base Outstanding Shares</span>
+            <input
+              name="outstandingShares"
+              defaultValue={capTableView.shares.baseOutstandingShares}
+              placeholder="10000000"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+            />
+          </label>
+          <button
+            type="submit"
+            disabled={savingCapTableBase}
+            className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:opacity-60"
+          >
+            {savingCapTableBase ? 'Saving...' : hasBaseShares ? 'Update Base Shares' : 'Set Base Shares'}
+          </button>
+        </form>
+      </Modal>
+
+      <Modal
+        open={modalView === 'grant'}
+        title={editingGrantId ? 'Edit Grant' : 'Create Grant'}
+        description="Manage issuance terms without leaving the registry."
+        onClose={cancelGrantEdit}
+      >
+        <form className="grid gap-3" onSubmit={onSubmitGrant}>
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Recipient</span>
+            <select
+              value={grantForm.personId}
+              onChange={(event) => setGrantForm((prev) => ({ ...prev, personId: event.target.value }))}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+            >
+              <option value="">Select recipient</option>
+              {people.map((person) => (
+                <option key={person.id} value={person.id}>
+                  {person.legalFirstName} {person.legalLastName}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+              <span>Award Type</span>
+              <select
+                value={grantForm.awardType}
+                onChange={(event) =>
+                  setGrantForm((prev) => ({
+                    ...prev,
+                    awardType: event.target.value as 'OPTION_ISO' | 'OPTION_NSO' | 'RSU',
+                    exercisePrice: event.target.value === 'RSU' ? '' : prev.exercisePrice,
+                  }))
+                }
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+              >
+                <option value="OPTION_NSO">Option - NSO</option>
+                <option value="OPTION_ISO">Option - ISO</option>
+                <option value="RSU">RSU</option>
+              </select>
+            </label>
+
+            <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+              <span>Quantity</span>
+              <input
+                value={grantForm.quantity}
+                onChange={(event) => setGrantForm((prev) => ({ ...prev, quantity: event.target.value }))}
+                placeholder="25000"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+              />
+            </label>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+              <span>Source Plan</span>
+              <select
+                value={grantForm.planId}
+                onChange={(event) => setGrantForm((prev) => ({ ...prev, planId: event.target.value }))}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+              >
+                <option value="">No plan selected</option>
+                {plans.map((plan) => (
+                  <option key={plan.id} value={plan.id}>
+                    {plan.code} - {plan.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+              <span>Currency</span>
+              <input
+                maxLength={3}
+                value={grantForm.currency}
+                onChange={(event) => setGrantForm((prev) => ({ ...prev, currency: event.target.value }))}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+              />
+            </label>
+          </div>
+
+          {grantForm.awardType === 'OPTION_NSO' || grantForm.awardType === 'OPTION_ISO' ? (
+            <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+              <span>Exercise Price</span>
+              <input
+                value={grantForm.exercisePrice}
+                onChange={(event) => setGrantForm((prev) => ({ ...prev, exercisePrice: event.target.value }))}
+                placeholder="1.50"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+              />
+            </label>
+          ) : null}
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+              <span>Grant Date</span>
+              <input
+                type="date"
+                value={grantForm.grantDate}
+                onChange={(event) => setGrantForm((prev) => ({ ...prev, grantDate: event.target.value }))}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+              />
+            </label>
+            <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+              <span>Expiration Date</span>
+              <input
+                type="date"
+                value={grantForm.expirationDate}
+                onChange={(event) => setGrantForm((prev) => ({ ...prev, expirationDate: event.target.value }))}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+              />
+            </label>
+          </div>
+
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Vesting Start Date</span>
+            <input
+              type="date"
+              value={grantForm.vestingStartDate}
+              onChange={(event) => setGrantForm((prev) => ({ ...prev, vestingStartDate: event.target.value }))}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+            />
+          </label>
+
+          <div className="grid gap-3 sm:grid-cols-3">
+            <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+              <span>Cliff Months</span>
+              <input
+                value={grantForm.cliffMonths}
+                onChange={(event) => setGrantForm((prev) => ({ ...prev, cliffMonths: event.target.value }))}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+              />
+            </label>
+            <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+              <span>Duration Months</span>
+              <input
+                value={grantForm.durationMonths}
+                onChange={(event) => setGrantForm((prev) => ({ ...prev, durationMonths: event.target.value }))}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+              />
+            </label>
+            <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+              <span>Interval Months</span>
+              <input
+                value={grantForm.intervalMonths}
+                onChange={(event) => setGrantForm((prev) => ({ ...prev, intervalMonths: event.target.value }))}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+              />
+            </label>
+          </div>
+
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Notes</span>
+            <input
+              value={grantForm.notes}
+              onChange={(event) => setGrantForm((prev) => ({ ...prev, notes: event.target.value }))}
+              placeholder="Optional internal notes"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+            />
+          </label>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="submit"
+              disabled={savingGrant || people.length === 0}
+              className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:opacity-60"
+            >
+              {savingGrant ? 'Saving...' : editingGrantId ? 'Update Grant' : 'Create Grant'}
+            </button>
+            <button
+              type="button"
+              onClick={cancelGrantEdit}
+              className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        open={modalView === 'plan'}
+        title={planForm.planId ? 'Edit Option Pool' : 'Create Option Pool'}
+        description="Adjust reserved share capacity and plan status."
+        onClose={resetPlanEditor}
+      >
+        <form className="grid gap-3" onSubmit={onSavePlan}>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+              <span>Plan Code</span>
+              <input
+                value={planForm.code}
+                onChange={(event) => setPlanForm((prev) => ({ ...prev, code: event.target.value }))}
+                disabled={Boolean(planForm.planId)}
+                placeholder="2026-OP"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900 disabled:bg-slate-100"
+              />
+            </label>
+
+            <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+              <span>Name</span>
+              <input
+                value={planForm.name}
+                onChange={(event) => setPlanForm((prev) => ({ ...prev, name: event.target.value }))}
+                placeholder="Employee Option Pool"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+              />
+            </label>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+              <span>Reserved Shares</span>
+              <input
+                value={planForm.reservedShares}
+                onChange={(event) => setPlanForm((prev) => ({ ...prev, reservedShares: event.target.value }))}
+                placeholder="1000000"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+              />
+            </label>
+            <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+              <span>Status</span>
+              <select
+                value={planForm.status}
+                onChange={(event) => setPlanForm((prev) => ({ ...prev, status: event.target.value }))}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+              >
+                <option value="DRAFT">DRAFT</option>
+                <option value="ACTIVE">ACTIVE</option>
+                <option value="PAUSED">PAUSED</option>
+                <option value="RETIRED">RETIRED</option>
+              </select>
+            </label>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+              <span>Effective Date</span>
+              <input
+                type="date"
+                value={planForm.effectiveDate}
+                onChange={(event) => setPlanForm((prev) => ({ ...prev, effectiveDate: event.target.value }))}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+              />
+            </label>
+            <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+              <span>Expiry Date</span>
+              <input
+                type="date"
+                value={planForm.expiryDate}
+                onChange={(event) => setPlanForm((prev) => ({ ...prev, expiryDate: event.target.value }))}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+              />
+            </label>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="submit"
+              disabled={savingPlan}
+              className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:opacity-60"
+            >
+              {savingPlan ? 'Saving...' : planForm.planId ? 'Update Pool' : 'Create Pool'}
+            </button>
+            <button
+              type="button"
+              onClick={resetPlanEditor}
+              className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        open={modalView === 'openingBalance'}
+        title="Add Opening Holder Balance"
+        description="Use this for initial cap table onboarding values."
+        onClose={() => setModalView(null)}
+      >
+        <form className="grid gap-3" onSubmit={onRecordOpeningBalance}>
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Holder</span>
+            <select
+              name="personId"
+              required
+              defaultValue=""
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+            >
+              <option value="" disabled>
+                Select holder
+              </option>
+              {people.map((person) => (
+                <option key={person.id} value={person.id}>
+                  {person.legalFirstName} {person.legalLastName}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+              <span>Quantity</span>
+              <input
+                name="quantity"
+                placeholder="500000"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+              />
+            </label>
+            <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+              <span>Effective Date</span>
+              <input
+                name="effectiveDate"
+                type="date"
+                defaultValue={dateInputToday()}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+              />
+            </label>
+          </div>
+
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Reason</span>
+            <input
+              name="reason"
+              placeholder="Opening cap table balance"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+            />
+          </label>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="submit"
+              disabled={savingOpeningBalance || people.length === 0}
+              className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:opacity-60"
+            >
+              {savingOpeningBalance ? 'Saving...' : 'Record Opening Balance'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setModalView(null)}
+              className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        open={modalView === 'manualTxn'}
+        title="Manual Ledger Entry"
+        description="Use this for corrective entries and edge-case adjustments."
+        onClose={() => setModalView(null)}
+      >
+        <form className="grid gap-3" onSubmit={onCreateManualTxn}>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+              <span>Transaction Type</span>
+              <select
+                name="type"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+              >
+                {['ISSUE', 'VEST', 'EXERCISE', 'CANCEL', 'TRANSFER', 'CONVERT', 'SPLIT', 'REVERSE', 'CORRECT'].map((type) => (
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+              <span>Effective Date and Time</span>
+              <input
+                name="effectiveAt"
+                type="datetime-local"
+                defaultValue={new Date().toISOString().slice(0, 16)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+              />
+            </label>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+              <span>Quantity</span>
+              <input
+                name="quantity"
+                placeholder="1000"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+              />
+            </label>
+            <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+              <span>Unit Price</span>
+              <input
+                name="unitPrice"
+                placeholder="Optional"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+              />
+            </label>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+              <span>From Holder</span>
+              <select
+                name="fromPersonId"
+                defaultValue={companyTreasuryValue}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+              >
+                <option value={companyTreasuryValue}>Company Treasury</option>
+                {people.map((person) => (
+                  <option key={person.id} value={person.id}>
+                    {person.legalFirstName} {person.legalLastName}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+              <span>To Holder</span>
+              <select
+                name="toPersonId"
+                defaultValue={companyTreasuryValue}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+              >
+                <option value={companyTreasuryValue}>Company Treasury</option>
+                {people.map((person) => (
+                  <option key={person.id} value={person.id}>
+                    {person.legalFirstName} {person.legalLastName}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Reason</span>
+            <input
+              name="reason"
+              placeholder="Why this entry is needed"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+            />
+          </label>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="submit"
+              disabled={savingTxn}
+              className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:opacity-60"
+            >
+              {savingTxn ? 'Saving...' : 'Record Transaction'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setModalView(null)}
+              className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      </Modal>
     </section>
   );
 }

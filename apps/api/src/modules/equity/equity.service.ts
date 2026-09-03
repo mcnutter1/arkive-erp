@@ -231,6 +231,21 @@ export class EquityService {
     return this.decimal(value).toFixed(2);
   }
 
+  private serializeLedgerTransaction<
+    T extends {
+      ledgerSequence: bigint;
+      quantity: Decimal | string | number;
+      unitPrice: Decimal | string | number | null;
+    },
+  >(txn: T) {
+    return {
+      ...txn,
+      ledgerSequence: txn.ledgerSequence.toString(),
+      quantity: this.renderDecimal(txn.quantity),
+      unitPrice: txn.unitPrice === null ? null : this.renderDecimal(txn.unitPrice),
+    };
+  }
+
   private async nextLedgerSequence(organizationId: string): Promise<bigint> {
     const seq = await this.prisma.equityTransaction.aggregate({
       where: { organizationId },
@@ -445,7 +460,10 @@ export class EquityService {
     const remainingQuantity = this.clampNonNegative(new Decimal(grant.quantity).sub(exercisedQuantity));
 
     return {
-      grant,
+      grant: {
+        ...grant,
+        equityTxns: grant.equityTxns.map((txn) => this.serializeLedgerTransaction(txn)),
+      },
       vestingPreview,
       exercisedQuantity: this.renderDecimal(exercisedQuantity),
       remainingQuantity: this.renderDecimal(remainingQuantity),
@@ -717,7 +735,7 @@ export class EquityService {
   }
 
   async listLedger(actor: AuthenticatedUser) {
-    return this.prisma.equityTransaction.findMany({
+    const txns = await this.prisma.equityTransaction.findMany({
       where: { organizationId: actor.organizationId },
       include: {
         plan: {
@@ -738,6 +756,8 @@ export class EquityService {
       orderBy: [{ effectiveAt: 'asc' }, { ledgerSequence: 'asc' }],
       take: 500,
     });
+
+    return txns.map((txn) => this.serializeLedgerTransaction(txn));
   }
 
   async getCapTable(actor: AuthenticatedUser) {
@@ -1005,7 +1025,7 @@ export class EquityService {
 
     const ledgerSequence = await this.nextLedgerSequence(actor.organizationId);
 
-    return this.prisma.equityTransaction.create({
+    const txn = await this.prisma.equityTransaction.create({
       data: {
         organizationId: actor.organizationId,
         type: dto.type,
@@ -1020,6 +1040,8 @@ export class EquityService {
         createdByUserId: actor.id,
       },
     });
+
+    return this.serializeLedgerTransaction(txn);
   }
 
   async createGrant(actor: AuthenticatedUser, dto: CreateGrantAwardDto) {
