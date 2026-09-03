@@ -150,7 +150,11 @@ docker compose run --rm api ./node_modules/.bin/prisma migrate status || true
 docker compose up -d --no-deps --build api worker web caddy
 apply_database_schema
 
-scripts/health-check.sh
+if ! scripts/health-check.sh; then
+  echo "[update] health checks failed; showing recent service logs" >&2
+  docker compose logs --tail=200 api web worker caddy || true
+  exit 1
+fi
 
 DEPLOY_SHA="$(git rev-parse --short HEAD)"
 echo "$BRANCH_NAME@$DEPLOY_SHA $(date -u +%FT%TZ) success" >> "$DATA_ROOT/runtime/deploy-history.log"
