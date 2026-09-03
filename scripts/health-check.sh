@@ -34,15 +34,22 @@ wait_for_service_running() {
 run_service_probe() {
 	local service="$1"
 	local probe_script="$2"
+	local deadline=$((SECONDS + HEALTH_TIMEOUT_SECONDS))
 
 	wait_for_service_running "$service"
 
-	if ! docker compose exec -T "$service" node -e "$probe_script"; then
-		echo "[health] probe failed for '$service'" >&2
-		echo "[health] recent logs for '$service'" >&2
-		docker compose logs --tail=150 "$service" || true
-		return 1
-	fi
+	while (( SECONDS < deadline )); do
+		if docker compose exec -T "$service" node -e "$probe_script"; then
+			return 0
+		fi
+
+		sleep "$HEALTH_POLL_INTERVAL_SECONDS"
+	done
+
+	echo "[health] probe failed for '$service' after ${HEALTH_TIMEOUT_SECONDS}s" >&2
+	echo "[health] recent logs for '$service'" >&2
+	docker compose logs --tail=150 "$service" || true
+	return 1
 }
 
 cd "$ROOT_DIR"
