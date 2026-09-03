@@ -885,7 +885,7 @@ export class EquityService {
 
   async createTransaction(actor: AuthenticatedUser, dto: CreateEquityTransactionDto) {
     const quantity = this.parseDecimalInput(dto.quantity, 'quantity');
-    const effectiveAt = this.parseDateInput(dto.effectiveAt, 'effectiveAt', true);
+    const effectiveAt = this.parseDateInput(dto.effectiveAt, 'effectiveAt', true) as Date;
 
     if (dto.fromPersonId) {
       await this.ensurePersonInOrg(actor.organizationId, dto.fromPersonId);
@@ -976,8 +976,8 @@ export class EquityService {
       throw new BadRequestException('Exercise price is only valid for option grants');
     }
 
-    const grantDate = this.parseDateInput(dto.grantDate, 'grantDate', true);
-    const vestingStartDate = this.parseDateInput(dto.vestingStartDate, 'vestingStartDate', true);
+    const grantDate = this.parseDateInput(dto.grantDate, 'grantDate', true) as Date;
+    const vestingStartDate = this.parseDateInput(dto.vestingStartDate, 'vestingStartDate', true) as Date;
     const expirationDate = this.parseDateInput(dto.expirationDate, 'expirationDate');
     const currency = (dto.currency ?? 'USD').trim().toUpperCase();
 
