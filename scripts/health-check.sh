@@ -59,6 +59,6 @@ echo "[health] api"
 run_service_probe api "fetch('http://localhost:4000/api/v1/health/liveness').then((r)=>process.exit(r.status < 500 ? 0 : 1)).catch(()=>process.exit(1))"
 
 echo "[health] web"
-run_service_probe web "fetch('http://localhost:3000').then((r)=>process.exit(r.status < 500 ? 0 : 1)).catch(()=>process.exit(1))"
+run_service_probe web "const hosts=['127.0.0.1','localhost',process.env.HOSTNAME].filter(Boolean);(async()=>{for(const host of hosts){try{const response=await fetch('http://'+host+':3000');if(response.status<500){process.exit(0);}}catch{}}process.exit(1);})();"
 
 echo "[health] done"
