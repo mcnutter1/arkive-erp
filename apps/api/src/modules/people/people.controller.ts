@@ -5,7 +5,14 @@ import { CurrentUser } from '../auth/current-user.decorator.js';
 import { AuthenticatedUser } from '../auth/auth.types.js';
 import { RequirePermissions } from '../authorization/permissions.decorator.js';
 import { PermissionsGuard } from '../authorization/permissions.guard.js';
-import { CreateEngagementDto, CreatePersonDto, PeopleQueryDto, UpdatePersonDto } from './dto.js';
+import {
+  CreateEngagementDto,
+  CreatePersonDto,
+  PeopleQueryDto,
+  ResetPersonAccountPasswordDto,
+  UpdatePersonDto,
+  UpsertPersonAccountDto,
+} from './dto.js';
 import { PeopleService } from './people.service.js';
 
 @Controller({ path: 'people', version: '1' })
@@ -45,5 +52,31 @@ export class PeopleController {
   @RequirePermissions('people.write')
   createEngagement(@CurrentUser() actor: AuthenticatedUser, @Body() dto: CreateEngagementDto) {
     return this.peopleService.createEngagement(actor, dto);
+  }
+
+  @Get(':personId/account')
+  @RequirePermissions('people.write')
+  getPersonAccount(@CurrentUser() actor: AuthenticatedUser, @Param('personId') personId: string) {
+    return this.peopleService.getPersonAccount(actor, personId);
+  }
+
+  @Post(':personId/account')
+  @RequirePermissions('people.write')
+  upsertPersonAccount(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('personId') personId: string,
+    @Body() dto: UpsertPersonAccountDto,
+  ) {
+    return this.peopleService.upsertPersonAccount(actor, personId, dto);
+  }
+
+  @Post(':personId/account/reset-password')
+  @RequirePermissions('people.write')
+  resetPersonAccountPassword(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('personId') personId: string,
+    @Body() dto: ResetPersonAccountPasswordDto,
+  ) {
+    return this.peopleService.resetPersonAccountPassword(actor, personId, dto);
   }
 }

@@ -74,6 +74,18 @@ type Person = {
   classification: string | null;
   employmentStatus: string | null;
   hrisProfile: unknown;
+  user?: {
+    id: string;
+    email: string;
+    status: string;
+    microsoftUserId: string | null;
+    localUsername: string | null;
+    userRoles: Array<{
+      role: {
+        code: string;
+      };
+    }>;
+  } | null;
 };
 
 type PeopleResponse = {
@@ -95,6 +107,33 @@ type CreatePersonForm = {
   jobTitle: string;
   department: string;
   companySignatory: boolean;
+};
+
+type LoginType = 'LOCAL' | 'M365';
+
+type AccountRole = {
+  code: string;
+  name: string;
+};
+
+type AccountDetailsResponse = {
+  person: {
+    id: string;
+    legalFirstName: string;
+    legalLastName: string;
+    primaryEmail: string | null;
+    businessEmail: string | null;
+  };
+  roles: AccountRole[];
+  account: {
+    id: string;
+    email: string;
+    status: string;
+    localUsername: string | null;
+    microsoftUserId: string | null;
+    mustRotatePassword: boolean;
+    roleCodes: string[];
+  } | null;
 };
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? '/api/v1';
@@ -190,7 +229,7 @@ const skillOptions = [
   'Marketing',
   'Customer Success',
 ];
-type PeopleModalView = 'createPerson' | 'createEngagement' | 'editProfile' | null;
+type PeopleModalView = 'createPerson' | 'createEngagement' | 'editProfile' | 'manageAccount' | null;
 
 function asObject(value: unknown): Record<string, unknown> {
   if (value && typeof value === 'object' && !Array.isArray(value)) {
@@ -321,6 +360,21 @@ export default function PeoplePage() {
   const [selectedPersonId, setSelectedPersonId] = useState('');
 
   const [createPersonForm, setCreatePersonForm] = useState<CreatePersonForm>(defaultCreatePersonForm());
+  const [accountPersonId, setAccountPersonId] = useState<string | null>(null);
+  const [accountRoles, setAccountRoles] = useState<AccountRole[]>([]);
+  const [accountLoading, setAccountLoading] = useState(false);
+  const [accountSaving, setAccountSaving] = useState(false);
+  const [accountResetting, setAccountResetting] = useState(false);
+  const [accountLoginType, setAccountLoginType] = useState<LoginType>('LOCAL');
+  const [accountEmail, setAccountEmail] = useState('');
+  const [accountStatus, setAccountStatus] = useState('ACTIVE');
+  const [accountLocalUsername, setAccountLocalUsername] = useState('');
+  const [accountLocalPassword, setAccountLocalPassword] = useState('');
+  const [accountMustRotatePassword, setAccountMustRotatePassword] = useState(true);
+  const [accountMicrosoftUserId, setAccountMicrosoftUserId] = useState('');
+  const [accountRoleCodes, setAccountRoleCodes] = useState<string[]>([]);
+  const [accountResetPassword, setAccountResetPassword] = useState('');
+  const [accountResetMustRotate, setAccountResetMustRotate] = useState(true);
 
   const [loading, setLoading] = useState(false);
   const [savingPerson, setSavingPerson] = useState(false);
@@ -396,6 +450,155 @@ export default function PeoplePage() {
       notes: readString(raw, 'notes'),
     };
   }, [selectedPerson]);
+
+  async function openAccountModal(personId: string) {
+    setAccountPersonId(personId);
+    setAccountLoading(true);
+    setError(null);
+    setNotice(null);
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/people/${personId}/account`, {
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        setError(await readApiError(response, 'Unable to load account details.'));
+        return;
+      }
+
+      const payload = (await response.json()) as AccountDetailsResponse;
+      setAccountRoles(payload.roles);
+      setAccountEmail(
+        payload.account?.email ?? payload.person.businessEmail ?? payload.person.primaryEmail ?? '',
+      );
+      setAccountStatus(payload.account?.status ?? 'ACTIVE');
+      setAccountLocalUsername(payload.account?.localUsername ?? '');
+      setAccountMicrosoftUserId(payload.account?.microsoftUserId ?? '');
+      setAccountRoleCodes(payload.account?.roleCodes ?? ['GUEST']);
+      setAccountMustRotatePassword(payload.account?.mustRotatePassword ?? true);
+      setAccountLoginType(payload.account?.microsoftUserId ? 'M365' : 'LOCAL');
+      setAccountLocalPassword('');
+      setAccountResetPassword('');
+      setAccountResetMustRotate(true);
+      setModalView('manageAccount');
+    } catch {
+      setError('Unable to load account details.');
+    } finally {
+      setAccountLoading(false);
+    }
+  }
+
+  function toggleAccountRole(roleCode: string, checked: boolean) {
+    setAccountRoleCodes((previous) => {
+      if (checked) {
+        return [...new Set([...previous, roleCode])];
+      }
+      return previous.filter((code) => code !== roleCode);
+    });
+  }
+
+  async function saveLinkedAccount(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!accountPersonId) {
+      return;
+    }
+
+    if (accountRoleCodes.length === 0) {
+      setError('Select at least one role for account access.');
+      return;
+    }
+
+    if (accountLoginType === 'LOCAL' && !accountLocalUsername.trim()) {
+      setError('Local username is required for local login accounts.');
+      return;
+    }
+
+    if (accountLoginType === 'M365' && !accountMicrosoftUserId.trim()) {
+      setError('Microsoft user ID is required for M365-linked accounts.');
+      return;
+    }
+
+    setAccountSaving(true);
+    setError(null);
+    setNotice(null);
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/people/${accountPersonId}/account`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          loginType: accountLoginType,
+          email: accountEmail.trim() || undefined,
+          status: accountStatus,
+          localUsername: accountLoginType === 'LOCAL' ? accountLocalUsername.trim() : undefined,
+          localPassword: accountLoginType === 'LOCAL' ? accountLocalPassword.trim() || undefined : undefined,
+          mustRotatePassword: accountLoginType === 'LOCAL' ? accountMustRotatePassword : undefined,
+          microsoftUserId: accountLoginType === 'M365' ? accountMicrosoftUserId.trim() : undefined,
+          roleCodes: accountRoleCodes,
+        }),
+      });
+
+      if (!response.ok) {
+        setError(await readApiError(response, 'Unable to save account settings.'));
+        return;
+      }
+
+      setNotice('Linked account saved and RBAC role assignments updated.');
+      setAccountLocalPassword('');
+      setModalView(null);
+      await loadPeople(accountPersonId);
+    } catch {
+      setError('Unable to save account settings.');
+    } finally {
+      setAccountSaving(false);
+    }
+  }
+
+  async function resetLinkedAccountPassword() {
+    if (!accountPersonId) {
+      return;
+    }
+
+    if (accountResetPassword.trim().length < 12) {
+      setError('Reset password must be at least 12 characters.');
+      return;
+    }
+
+    setAccountResetting(true);
+    setError(null);
+    setNotice(null);
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/people/${accountPersonId}/account/reset-password`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          newPassword: accountResetPassword.trim(),
+          mustRotatePassword: accountResetMustRotate,
+        }),
+      });
+
+      if (!response.ok) {
+        setError(await readApiError(response, 'Unable to reset local account password.'));
+        return;
+      }
+
+      setNotice('Local account password reset successfully.');
+      setAccountResetPassword('');
+    } catch {
+      setError('Unable to reset local account password.');
+    } finally {
+      setAccountResetting(false);
+    }
+  }
 
   async function loadPeople(preferredSelectionId?: string) {
     setLoading(true);
@@ -760,7 +963,7 @@ export default function PeoplePage() {
         <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <h2 className="text-lg font-semibold">People Actions</h2>
           <p className="mt-1 text-sm text-slate-600">
-            Launch guided editors for person onboarding, engagement setup, and profile updates.
+            Launch guided editors for person onboarding, engagement setup, profile updates, and account access.
           </p>
 
           <div className="mt-4 grid gap-3">
@@ -779,7 +982,7 @@ export default function PeoplePage() {
               Create Engagement
             </button>
             <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-              Use Edit in the directory table to open the full HRIS profile editor.
+              Use Edit to update HRIS profile data or Account to link login credentials and roles.
             </p>
           </div>
         </article>
@@ -810,6 +1013,7 @@ export default function PeoplePage() {
                 <tr>
                   <th className="pb-2 pr-4">Person</th>
                   <th className="pb-2 pr-4">Status</th>
+                  <th className="pb-2 pr-4">Account</th>
                   <th className="pb-2 pr-4">Actions</th>
                 </tr>
               </thead>
@@ -821,6 +1025,11 @@ export default function PeoplePage() {
                       <p className="text-xs text-slate-500">{person.primaryEmail ?? person.businessEmail ?? 'No email'}</p>
                     </td>
                     <td className="py-2 pr-4">{person.employmentStatus ? labelFromToken(person.employmentStatus) : 'N/A'}</td>
+                    <td className="py-2 pr-4 text-xs text-slate-600">
+                      {person.user
+                        ? `${person.user.status} · ${person.user.userRoles.map((item) => item.role.code).join(', ') || 'No roles'}`
+                        : 'Not linked'}
+                    </td>
                     <td className="py-2 pr-4">
                       <div className="flex flex-wrap gap-2">
                         <button
@@ -832,6 +1041,14 @@ export default function PeoplePage() {
                           className="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50"
                         >
                           Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void openAccountModal(person.id)}
+                          disabled={accountLoading}
+                          className="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-60"
+                        >
+                          Account
                         </button>
                         <button
                           type="button"
@@ -1113,6 +1330,157 @@ export default function PeoplePage() {
             </button>
           </div>
         </form>
+      </Modal>
+
+      <Modal
+        open={modalView === 'manageAccount' && Boolean(accountPersonId)}
+        title="Manage Login Account"
+        description="Link this person to a local or M365 login and assign role-based access."
+        onClose={() => setModalView(null)}
+      >
+        {accountPersonId ? (
+          <form className="grid gap-4" onSubmit={saveLinkedAccount}>
+            <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+                <span>Login Type</span>
+                <select
+                  value={accountLoginType}
+                  onChange={(event) => setAccountLoginType(event.target.value as LoginType)}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                >
+                  <option value="LOCAL">Local Login</option>
+                  <option value="M365">M365 / Entra ID</option>
+                </select>
+              </label>
+
+              <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+                <span>Account Email</span>
+                <input
+                  value={accountEmail}
+                  onChange={(event) => setAccountEmail(event.target.value)}
+                  type="email"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                />
+              </label>
+
+              <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+                <span>Account Status</span>
+                <select
+                  value={accountStatus}
+                  onChange={(event) => setAccountStatus(event.target.value)}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                >
+                  <option value="INVITED">Invited</option>
+                  <option value="ACTIVE">Active</option>
+                  <option value="SUSPENDED">Suspended</option>
+                  <option value="DEACTIVATED">Deactivated</option>
+                </select>
+              </label>
+
+              {accountLoginType === 'LOCAL' ? (
+                <>
+                  <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+                    <span>Local Username</span>
+                    <input
+                      value={accountLocalUsername}
+                      onChange={(event) => setAccountLocalUsername(event.target.value)}
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                    />
+                  </label>
+                  <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+                    <span>Local Password (optional for existing account)</span>
+                    <input
+                      value={accountLocalPassword}
+                      onChange={(event) => setAccountLocalPassword(event.target.value)}
+                      type="password"
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                    />
+                  </label>
+                  <label className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={accountMustRotatePassword}
+                      onChange={(event) => setAccountMustRotatePassword(event.target.checked)}
+                    />
+                    <span>Require password rotation on next login</span>
+                  </label>
+                </>
+              ) : (
+                <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+                  <span>M365 User Object ID</span>
+                  <input
+                    value={accountMicrosoftUserId}
+                    onChange={(event) => setAccountMicrosoftUserId(event.target.value)}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                    placeholder="Entra object ID"
+                  />
+                </label>
+              )}
+            </div>
+
+            <div className="rounded-xl border border-slate-200 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Role Assignments</p>
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                {accountRoles.map((role) => (
+                  <label key={role.code} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={accountRoleCodes.includes(role.code)}
+                      onChange={(event) => toggleAccountRole(role.code, event.target.checked)}
+                    />
+                    <span>{role.name}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                type="submit"
+                disabled={accountSaving}
+                className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:opacity-60"
+              >
+                {accountSaving ? 'Saving...' : 'Save Account'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setModalView(null)}
+                className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100"
+              >
+                Cancel
+              </button>
+            </div>
+
+            {accountLoginType === 'LOCAL' ? (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">Reset Local Password</p>
+                <input
+                  value={accountResetPassword}
+                  onChange={(event) => setAccountResetPassword(event.target.value)}
+                  type="password"
+                  placeholder="New password (min 12 chars)"
+                  className="mt-2 w-full rounded-lg border border-amber-300 px-3 py-2 text-sm"
+                />
+                <label className="mt-2 inline-flex items-center gap-2 text-xs text-amber-800">
+                  <input
+                    type="checkbox"
+                    checked={accountResetMustRotate}
+                    onChange={(event) => setAccountResetMustRotate(event.target.checked)}
+                  />
+                  Force rotation on next login
+                </label>
+                <button
+                  type="button"
+                  onClick={() => void resetLinkedAccountPassword()}
+                  disabled={accountResetting}
+                  className="mt-3 rounded-lg border border-amber-400 bg-white px-3 py-2 text-xs text-amber-800 hover:bg-amber-100 disabled:opacity-60"
+                >
+                  {accountResetting ? 'Resetting...' : 'Reset Password'}
+                </button>
+              </div>
+            ) : null}
+          </form>
+        ) : null}
       </Modal>
 
       <Modal

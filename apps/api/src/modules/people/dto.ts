@@ -8,6 +8,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  MinLength,
   MaxLength,
   ValidateNested,
 } from 'class-validator';
@@ -32,8 +33,22 @@ const EngagementStatusValues = {
   ALUMNI: 'ALUMNI',
 } as const;
 
+const AccountLoginTypeValues = {
+  LOCAL: 'LOCAL',
+  M365: 'M365',
+} as const;
+
+const UserStatusValues = {
+  INVITED: 'INVITED',
+  ACTIVE: 'ACTIVE',
+  SUSPENDED: 'SUSPENDED',
+  DEACTIVATED: 'DEACTIVATED',
+} as const;
+
 type EngagementKind = (typeof EngagementKindValues)[keyof typeof EngagementKindValues];
 type EngagementStatus = (typeof EngagementStatusValues)[keyof typeof EngagementStatusValues];
+type AccountLoginType = (typeof AccountLoginTypeValues)[keyof typeof AccountLoginTypeValues];
+type UserStatus = (typeof UserStatusValues)[keyof typeof UserStatusValues];
 
 import { PaginationDto } from '../common/pagination.dto.js';
 
@@ -322,4 +337,48 @@ export class PeopleQueryDto extends PaginationDto {
   @IsOptional()
   @IsString()
   search?: string;
+}
+
+export class UpsertPersonAccountDto {
+  @IsEnum(AccountLoginTypeValues)
+  loginType!: AccountLoginType;
+
+  @IsOptional()
+  @IsEmail()
+  email?: string;
+
+  @IsOptional()
+  @IsEnum(UserStatusValues)
+  status?: UserStatus;
+
+  @IsOptional()
+  @IsString()
+  localUsername?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(12)
+  localPassword?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  mustRotatePassword?: boolean;
+
+  @IsOptional()
+  @IsString()
+  microsoftUserId?: string;
+
+  @IsArray()
+  @IsString({ each: true })
+  roleCodes!: string[];
+}
+
+export class ResetPersonAccountPasswordDto {
+  @IsString()
+  @MinLength(12)
+  newPassword!: string;
+
+  @IsOptional()
+  @IsBoolean()
+  mustRotatePassword?: boolean;
 }

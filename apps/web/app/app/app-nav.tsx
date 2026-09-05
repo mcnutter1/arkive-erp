@@ -9,6 +9,7 @@ import { LogoutButton } from './logout-button';
 type NavItem = {
   href: string;
   label: string;
+  requiredPermission?: string;
 };
 
 type NavGroup = {
@@ -19,6 +20,7 @@ type NavGroup = {
 
 type AppNavProps = {
   userEmail: string;
+  permissions: string[];
 };
 
 const navGroups: NavGroup[] = [
@@ -26,46 +28,62 @@ const navGroups: NavGroup[] = [
     id: 'people',
     label: 'People Ops',
     items: [
-      { href: '/app/people', label: 'People' },
-      { href: '/app/tasks', label: 'Tasks' },
-      { href: '/app/approvals', label: 'Approvals' },
-      { href: '/app/portal', label: 'Portal' },
+      { href: '/app/people', label: 'People', requiredPermission: 'people.read' },
+      { href: '/app/tasks', label: 'Tasks', requiredPermission: 'tasks.read' },
+      { href: '/app/approvals', label: 'Approvals', requiredPermission: 'approvals.read' },
+      { href: '/app/portal', label: 'Portal', requiredPermission: 'portal.read.self' },
     ],
   },
   {
     id: 'equity',
     label: 'Equity and Finance',
     items: [
-      { href: '/app/equity', label: 'Equity' },
-      { href: '/app/fundraising', label: 'Fundraising' },
-      { href: '/app/valuations-reports', label: 'Valuations and Reports' },
+      { href: '/app/equity', label: 'Equity', requiredPermission: 'equity.read' },
+      { href: '/app/fundraising', label: 'Fundraising', requiredPermission: 'fundraising.read' },
+      {
+        href: '/app/valuations-reports',
+        label: 'Valuations and Reports',
+        requiredPermission: 'valuations.read',
+      },
     ],
   },
   {
     id: 'docs',
     label: 'Documents and Search',
     items: [
-      { href: '/app/documents', label: 'Documents' },
-      { href: '/app/search', label: 'Search' },
-      { href: '/app/m365', label: 'M365' },
+      { href: '/app/documents', label: 'Documents', requiredPermission: 'documents.read' },
+      { href: '/app/search', label: 'Search', requiredPermission: 'search.read' },
+      { href: '/app/m365', label: 'M365', requiredPermission: 'm365.read' },
     ],
   },
   {
     id: 'admin',
     label: 'Admin',
     items: [
-      { href: '/app/admin-settings', label: 'Admin Settings' },
-      { href: '/app/setup-security', label: 'Security' },
-      { href: '/docs', label: 'API Docs' },
+      {
+        href: '/app/admin-settings',
+        label: 'Admin Settings',
+        requiredPermission: 'admin.settings.read',
+      },
+      { href: '/app/setup-security', label: 'Security', requiredPermission: 'admin.settings.read' },
+      { href: '/docs', label: 'API Docs', requiredPermission: 'system.read' },
     ],
   },
 ];
 
-export function AppNav({ userEmail }: AppNavProps) {
+export function AppNav({ userEmail, permissions }: AppNavProps) {
   const pathname = usePathname();
   const [openGroupId, setOpenGroupId] = useState<string | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
   const navRef = useRef<HTMLElement | null>(null);
+  const hasWildcard = permissions.includes('*');
+
+  function canAccess(permission?: string): boolean {
+    if (!permission) {
+      return true;
+    }
+    return hasWildcard || permissions.includes(permission);
+  }
 
   useEffect(() => {
     setOpenGroupId(null);
@@ -103,12 +121,24 @@ export function AppNav({ userEmail }: AppNavProps) {
   }, []);
 
   const quickLinks = useMemo(
-    () => [
-      { href: '/app', label: 'Dashboard' },
-      { href: '/app/equity', label: 'Equity' },
-      { href: '/app/people', label: 'People' },
-    ],
-    [],
+    () =>
+      [
+        { href: '/app', label: 'Dashboard' },
+        { href: '/app/equity', label: 'Equity', requiredPermission: 'equity.read' },
+        { href: '/app/people', label: 'People', requiredPermission: 'people.read' },
+      ].filter((item) => canAccess(item.requiredPermission)),
+    [permissions],
+  );
+
+  const visibleNavGroups = useMemo(
+    () =>
+      navGroups
+        .map((group) => ({
+          ...group,
+          items: group.items.filter((item) => canAccess(item.requiredPermission)),
+        }))
+        .filter((group) => group.items.length > 0),
+    [permissions],
   );
 
   return (
@@ -149,7 +179,7 @@ export function AppNav({ userEmail }: AppNavProps) {
               );
             })}
 
-            {navGroups.map((group) => {
+            {visibleNavGroups.map((group) => {
               const isOpen = openGroupId === group.id;
               return (
                 <div key={group.id} className="relative">
@@ -205,7 +235,7 @@ export function AppNav({ userEmail }: AppNavProps) {
               })}
             </div>
 
-            {navGroups.map((group) => (
+            {visibleNavGroups.map((group) => (
               <div key={group.id}>
                 <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">{group.label}</p>
                 <div className="mt-1 grid gap-1">

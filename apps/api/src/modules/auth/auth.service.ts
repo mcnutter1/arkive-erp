@@ -7,6 +7,7 @@ import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { PrismaService } from '../common/prisma.service.js';
 import { AuthenticatedUser } from './auth.types.js';
 import { makeSessionCookie, parseCookie, SESSION_COOKIE_NAME } from './cookie.util.js';
+import { RbacService } from './rbac.service.js';
 
 type LocalAdminSetting = {
   username?: string;
@@ -21,6 +22,7 @@ export class AuthService {
   constructor(
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
+    private readonly rbac: RbacService,
   ) {}
 
   private sha256(input: string): string {
@@ -182,11 +184,102 @@ export class AuthService {
     return tenant;
   }
 
+  private async ensureRoleAssignment(
+    organizationId: string,
+    userId: string,
+    roleCode: string,
+  ): Promise<void> {
+    const role = await this.prisma.role.findFirst({
+      where: {
+        organizationId,
+        code: roleCode,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!role) {
+      return;
+    }
+
+    await this.prisma.userRole.upsert({
+      where: {
+        userId_roleId: {
+          userId,
+          roleId: role.id,
+        },
+      },
+      update: {
+        expiresAt: null,
+      },
+      create: {
+        userId,
+        roleId: role.id,
+      },
+    });
+  }
+
+  private async authenticateLocalUser(
+    organizationId: string,
+    username: string,
+    password: string,
+  ): Promise<{ id: string; organizationId: string; mustRotatePassword: boolean } | null> {
+    const normalized = username.trim();
+    if (!normalized) {
+      return null;
+    }
+
+    const user = await this.prisma.user.findFirst({
+      where: {
+        organizationId,
+        archivedAt: null,
+        OR: [
+          { localUsername: { equals: normalized, mode: 'insensitive' } },
+          { email: { equals: normalized, mode: 'insensitive' } },
+        ],
+      },
+      select: {
+        id: true,
+        organizationId: true,
+        localPasswordHash: true,
+        localPasswordSalt: true,
+        mustRotatePassword: true,
+        status: true,
+      },
+    });
+
+    if (!user) {
+      return null;
+    }
+
+    if (user.status === 'SUSPENDED' || user.status === 'DEACTIVATED') {
+      return null;
+    }
+
+    if (!user.localPasswordHash || !user.localPasswordSalt) {
+      return null;
+    }
+
+    if (!this.passwordMatches(password, user.localPasswordSalt, user.localPasswordHash)) {
+      return null;
+    }
+
+    return {
+      id: user.id,
+      organizationId: user.organizationId,
+      mustRotatePassword: user.mustRotatePassword,
+    };
+  }
+
   private async loadAuthenticatedUserByUserId(userId: string): Promise<AuthenticatedUser> {
     const user = await this.prisma.user.findFirst({
       where: { id: userId, archivedAt: null },
       include: {
         userRoles: {
+          where: {
+            OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+          },
           include: {
             role: {
               include: {
@@ -209,6 +302,9 @@ export class AuthService {
     const permissions = user.userRoles
       .flatMap((ur) => ur.role.rolePermissions.map((rp) => rp.permission.code))
       .filter((value, index, self) => self.indexOf(value) === index);
+    const roles = user.userRoles
+      .map((assignment) => assignment.role.code)
+      .filter((value, index, self) => self.indexOf(value) === index);
 
     const userEmail = user.email;
     const localCredentials = await this.getLocalAdminCredentials(user.organizationId);
@@ -219,6 +315,8 @@ export class AuthService {
 
     if (localAdmin) {
       mustRotatePassword = localCredentials.mustRotatePassword;
+    } else {
+      mustRotatePassword = user.mustRotatePassword;
     }
 
     return {
@@ -226,6 +324,7 @@ export class AuthService {
       organizationId: user.organizationId,
       personId: user.personId ?? undefined,
       email: userEmail,
+      roles,
       permissions: localAdmin ? ['*', ...permissions] : permissions,
       isLocalAdmin: localAdmin,
       mustRotatePassword,
@@ -396,6 +495,8 @@ export class AuthService {
       throw new UnauthorizedException('Nonce validation failed');
     }
 
+    await this.rbac.ensureCatalog(stored.organizationId);
+
     let user = await this.prisma.user.findFirst({
       where: {
         microsoftUserId: oid,
@@ -412,6 +513,7 @@ export class AuthService {
           status: 'ACTIVE',
         },
       });
+      await this.ensureRoleAssignment(stored.organizationId, user.id, 'GUEST');
     }
 
     if (!user) {
@@ -457,44 +559,60 @@ export class AuthService {
       });
     }
 
+    await this.rbac.ensureCatalog(org.id);
+
     const localAdmin = await this.getLocalAdminCredentials(org.id);
+    const normalizedUsername = username.trim().toLowerCase();
+    const normalizedAdminUsername = localAdmin.username.trim().toLowerCase();
 
-    if (username.trim().toLowerCase() !== localAdmin.username.trim().toLowerCase()) {
-      throw new UnauthorizedException('Invalid username or password');
-    }
-
-    if (localAdmin.passwordHash && localAdmin.passwordSalt) {
-      if (!this.passwordMatches(password, localAdmin.passwordSalt, localAdmin.passwordHash)) {
+    if (normalizedUsername === normalizedAdminUsername) {
+      if (localAdmin.passwordHash && localAdmin.passwordSalt) {
+        if (!this.passwordMatches(password, localAdmin.passwordSalt, localAdmin.passwordHash)) {
+          throw new UnauthorizedException('Invalid username or password');
+        }
+      } else if (password !== (localAdmin.plainPassword ?? '')) {
         throw new UnauthorizedException('Invalid username or password');
       }
-    } else if (password !== (localAdmin.plainPassword ?? '')) {
+
+      const user = await this.prisma.user.upsert({
+        where: {
+          organizationId_email: {
+            organizationId: org.id,
+            email: localAdmin.email.toLowerCase(),
+          },
+        },
+        update: {
+          status: 'ACTIVE',
+          localUsername: localAdmin.username.toLowerCase(),
+        },
+        create: {
+          organizationId: org.id,
+          email: localAdmin.email.toLowerCase(),
+          status: 'ACTIVE',
+          localUsername: localAdmin.username.toLowerCase(),
+        },
+      });
+
+      await this.ensureRoleAssignment(org.id, user.id, 'ADMIN');
+
+      const session = await this.createSessionForUser(user, ipAddress, userAgent);
+      return {
+        cookie: session.cookie,
+        redirectTo: this.config.get<string>('APP_BASE_URL') ?? '/',
+        mustRotatePassword: localAdmin.mustRotatePassword || user.mustRotatePassword,
+      };
+    }
+
+    const localUser = await this.authenticateLocalUser(org.id, username, password);
+    if (!localUser) {
       throw new UnauthorizedException('Invalid username or password');
     }
 
-    let user = await this.prisma.user.findFirst({
-      where: {
-        organizationId: org.id,
-        email: localAdmin.email,
-        archivedAt: null,
-      },
-    });
-
-    if (!user) {
-      user = await this.prisma.user.create({
-        data: {
-          organizationId: org.id,
-          email: localAdmin.email,
-          status: 'ACTIVE',
-        },
-      });
-    }
-
-    const session = await this.createSessionForUser(user, ipAddress, userAgent);
-
+    const session = await this.createSessionForUser(localUser, ipAddress, userAgent);
     return {
       cookie: session.cookie,
       redirectTo: this.config.get<string>('APP_BASE_URL') ?? '/',
-      mustRotatePassword: localAdmin.mustRotatePassword,
+      mustRotatePassword: localUser.mustRotatePassword,
     };
   }
 

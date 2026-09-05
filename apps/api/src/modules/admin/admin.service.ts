@@ -2,12 +2,16 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { AuthenticatedUser } from '../auth/auth.types.js';
+import { RbacService } from '../auth/rbac.service.js';
 import { PrismaService } from '../common/prisma.service.js';
 import { UpsertSettingDto } from './dto.js';
 
 @Injectable()
 export class AdminService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly rbac: RbacService,
+  ) {}
 
   async listSection(actor: AuthenticatedUser, section: string) {
     return this.prisma.systemSetting.findMany({
@@ -40,5 +44,16 @@ export class AdminService {
         updatedByUserId: actor.id,
       },
     });
+  }
+
+  async getRbacSections(actor: AuthenticatedUser) {
+    return this.rbac.getSectionRoleOverview(actor.organizationId);
+  }
+
+  async updateRbacSections(
+    actor: AuthenticatedUser,
+    updates: Array<{ section: string; roleCodes: string[] }>,
+  ) {
+    return this.rbac.updateSectionRoleAssignments(actor.organizationId, updates);
   }
 }

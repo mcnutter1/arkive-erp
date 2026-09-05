@@ -5,7 +5,7 @@ import { CurrentUser } from '../auth/current-user.decorator.js';
 import { AuthenticatedUser } from '../auth/auth.types.js';
 import { RequirePermissions } from '../authorization/permissions.decorator.js';
 import { PermissionsGuard } from '../authorization/permissions.guard.js';
-import { UpsertSettingDto } from './dto.js';
+import { UpdateRbacSectionsDto, UpsertSettingDto } from './dto.js';
 import { AdminService } from './admin.service.js';
 
 @Controller({ path: 'admin', version: '1' })
@@ -23,5 +23,17 @@ export class AdminController {
   @RequirePermissions('admin.settings.write')
   upsertSetting(@CurrentUser() actor: AuthenticatedUser, @Body() dto: UpsertSettingDto) {
     return this.adminService.upsertSetting(actor, dto);
+  }
+
+  @Get('rbac/sections')
+  @RequirePermissions('admin.rbac.read')
+  getRbacSections(@CurrentUser() actor: AuthenticatedUser) {
+    return this.adminService.getRbacSections(actor);
+  }
+
+  @Post('rbac/sections')
+  @RequirePermissions('admin.rbac.write')
+  updateRbacSections(@CurrentUser() actor: AuthenticatedUser, @Body() dto: UpdateRbacSectionsDto) {
+    return this.adminService.updateRbacSections(actor, dto.sections);
   }
 }

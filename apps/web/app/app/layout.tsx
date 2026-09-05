@@ -14,6 +14,7 @@ type SessionResponse = {
     id: string;
     email: string;
     organizationId: string;
+    roles: string[];
     permissions: string[];
     isLocalAdmin?: boolean;
   };
@@ -46,7 +47,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
 
   return (
     <main className="min-h-screen bg-slate-100 text-slate-900">
-      <AppNav userEmail={session.user.email} />
+      <AppNav userEmail={session.user.email} permissions={session.user.permissions} />
       <div className="mx-auto w-full max-w-6xl px-4 py-6 md:px-6">{children}</div>
     </main>
   );

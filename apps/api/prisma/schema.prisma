@@ -130,72 +130,72 @@ enum ExerciseRequestStatus {
 }
 
 model Organization {
-  id          String      @id @default(uuid()) @db.Uuid
-  code        String      @unique
-  name        String
-  timezone    String      @default("UTC")
-  currency    String      @default("USD")
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-  archivedAt  DateTime?
+  id         String    @id @default(uuid()) @db.Uuid
+  code       String    @unique
+  name       String
+  timezone   String    @default("UTC")
+  currency   String    @default("USD")
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  archivedAt DateTime?
 
-  legalEntities   LegalEntity[]
-  people          Person[]
-  users           User[]
-  roles           Role[]
-  permissions     Permission[]
-  featureFlags    FeatureFlag[]
-  departments     Department[]
-  engagementTypes EngagementType[]
-  auditEvents     AuditEvent[]
-  engagements     Engagement[]
-  documents       Document[]
-  documentVersions DocumentVersion[]
-  signatureRequests SignatureRequest[]
+  legalEntities         LegalEntity[]
+  people                Person[]
+  users                 User[]
+  roles                 Role[]
+  permissions           Permission[]
+  featureFlags          FeatureFlag[]
+  departments           Department[]
+  engagementTypes       EngagementType[]
+  auditEvents           AuditEvent[]
+  engagements           Engagement[]
+  documents             Document[]
+  documentVersions      DocumentVersion[]
+  signatureRequests     SignatureRequest[]
   signatureParticipants SignatureParticipant[]
-  signatureEvents SignatureEvent[]
-  tasks           Task[]
-  notifications   Notification[]
-  securityClasses SecurityClass[]
-  equityPlans     EquityPlan[]
-  equityTxns      EquityTransaction[]
-  grants          GrantAward[]
-  vestingSchedules VestingSchedule[]
-  valuations      Valuation[]
-  fundraisingRounds FundraisingRound[]
-  financingInstruments FinancingInstrument[]
-  approvalRequests ApprovalRequest[]
-  approvalDecisions ApprovalDecision[]
-  provisioningJobs M365ProvisioningJob[]
-  systemSettings   SystemSetting[]
-  oidcStates       OidcAuthState[]
-  authSessions     AuthSession[]
-  recordShares     RecordShare[]
-  exerciseRequests ExerciseRequest[]
-  terminationRecords TerminationRecord[]
-  fundraisingScenarios FundraisingScenario[]
+  signatureEvents       SignatureEvent[]
+  tasks                 Task[]
+  notifications         Notification[]
+  securityClasses       SecurityClass[]
+  equityPlans           EquityPlan[]
+  equityTxns            EquityTransaction[]
+  grants                GrantAward[]
+  vestingSchedules      VestingSchedule[]
+  valuations            Valuation[]
+  fundraisingRounds     FundraisingRound[]
+  financingInstruments  FinancingInstrument[]
+  approvalRequests      ApprovalRequest[]
+  approvalDecisions     ApprovalDecision[]
+  provisioningJobs      M365ProvisioningJob[]
+  systemSettings        SystemSetting[]
+  oidcStates            OidcAuthState[]
+  authSessions          AuthSession[]
+  recordShares          RecordShare[]
+  exerciseRequests      ExerciseRequest[]
+  terminationRecords    TerminationRecord[]
+  fundraisingScenarios  FundraisingScenario[]
 }
 
 model LegalEntity {
-  id             String    @id @default(uuid()) @db.Uuid
-  organizationId String    @db.Uuid
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
   legalName      String
   shortName      String?
   jurisdiction   String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  engagements  Engagement[]
-  documents    Document[]
-  securityClasses SecurityClass[]
-  equityPlans  EquityPlan[]
-  equityTxns   EquityTransaction[]
-  valuations   Valuation[]
+  organization      Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  engagements       Engagement[]
+  documents         Document[]
+  securityClasses   SecurityClass[]
+  equityPlans       EquityPlan[]
+  equityTxns        EquityTransaction[]
+  valuations        Valuation[]
   fundraisingRounds FundraisingRound[]
 
-  @@index([organizationId])
   @@unique([organizationId, legalName])
+  @@index([organizationId])
 }
 
 model Person {
@@ -214,23 +214,23 @@ model Person {
   updatedAt        DateTime  @updatedAt
   archivedAt       DateTime?
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  user         User?
-  managerOf    Engagement[] @relation("ManagerPerson")
-  engagements  Engagement[] @relation("EngagedPerson")
-  recordShares RecordShare[]
-  documents    Document[]
-  tasks        Task[]       @relation("TaskSubjectPerson")
-  tasksOwned   Task[]       @relation("TaskAssignee")
-  tasksCreated Task[]       @relation("TaskCreator")
-  notifications Notification[]
+  organization          Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  user                  User?
+  managerOf             Engagement[]           @relation("ManagerPerson")
+  engagements           Engagement[]           @relation("EngagedPerson")
+  recordShares          RecordShare[]
+  documents             Document[]
+  tasks                 Task[]                 @relation("TaskSubjectPerson")
+  tasksOwned            Task[]                 @relation("TaskAssignee")
+  tasksCreated          Task[]                 @relation("TaskCreator")
+  notifications         Notification[]
   signatureParticipants SignatureParticipant[]
-  grants       GrantAward[]
-  financingInstruments FinancingInstrument[]
-  approvalDecisions ApprovalDecision[]
-  provisioningJobs M365ProvisioningJob[]
-  exerciseRequests ExerciseRequest[]
-  terminationRecords TerminationRecord[]
+  grants                GrantAward[]
+  financingInstruments  FinancingInstrument[]
+  approvalDecisions     ApprovalDecision[]
+  provisioningJobs      M365ProvisioningJob[]
+  exerciseRequests      ExerciseRequest[]
+  terminationRecords    TerminationRecord[]
 
   @@index([organizationId])
   @@index([primaryEmail])
@@ -238,35 +238,40 @@ model Person {
 }
 
 model User {
-  id               String      @id @default(uuid()) @db.Uuid
-  organizationId   String      @db.Uuid
-  personId         String?     @unique @db.Uuid
-  microsoftUserId  String?     @unique
-  email            String
-  status           UserStatus  @default(INVITED)
-  lastLoginAt      DateTime?
-  createdAt        DateTime    @default(now())
-  updatedAt        DateTime    @updatedAt
-  archivedAt       DateTime?
+  id                 String     @id @default(uuid()) @db.Uuid
+  organizationId     String     @db.Uuid
+  personId           String?    @unique @db.Uuid
+  microsoftUserId    String?    @unique
+  localUsername      String?
+  localPasswordHash  String?
+  localPasswordSalt  String?
+  mustRotatePassword Boolean    @default(false)
+  email              String
+  status             UserStatus @default(INVITED)
+  lastLoginAt        DateTime?
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+  archivedAt         DateTime?
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  person       Person?      @relation(fields: [personId], references: [id], onDelete: SetNull)
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  person       Person?       @relation(fields: [personId], references: [id], onDelete: SetNull)
   userRoles    UserRole[]
   authSessions AuthSession[]
 
-  @@index([organizationId])
   @@unique([organizationId, email])
+  @@unique([organizationId, localUsername])
+  @@index([organizationId])
 }
 
 model OidcAuthState {
-  id             String   @id @default(uuid()) @db.Uuid
-  organizationId String   @db.Uuid
-  stateHash      String   @unique
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @db.Uuid
+  stateHash      String    @unique
   nonceHash      String
   returnTo       String?
   expiresAt      DateTime
   consumedAt     DateTime?
-  createdAt      DateTime @default(now())
+  createdAt      DateTime  @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
 
@@ -293,15 +298,15 @@ model AuthSession {
 }
 
 model RecordShare {
-  id             String            @id @default(uuid()) @db.Uuid
-  organizationId String            @db.Uuid
-  resourceType   String
-  resourceId     String
-  personId       String            @db.Uuid
-  permission     SharePermission
-  expiresAt      DateTime?
-  createdByUserId String?          @db.Uuid
-  createdAt      DateTime          @default(now())
+  id              String          @id @default(uuid()) @db.Uuid
+  organizationId  String          @db.Uuid
+  resourceType    String
+  resourceId      String
+  personId        String          @db.Uuid
+  permission      SharePermission
+  expiresAt       DateTime?
+  createdByUserId String?         @db.Uuid
+  createdAt       DateTime        @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   person       Person       @relation(fields: [personId], references: [id], onDelete: Restrict)
@@ -332,13 +337,13 @@ model Engagement {
   updatedAt        DateTime         @updatedAt
   archivedAt       DateTime?
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  person       Person       @relation("EngagedPerson", fields: [personId], references: [id], onDelete: Restrict)
-  legalEntity  LegalEntity? @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
-  manager      Person?      @relation("ManagerPerson", fields: [managerPersonId], references: [id], onDelete: SetNull)
-  documents    Document[]
-  tasks        Task[]
-  terminations TerminationRecord[]
+  organization     Organization          @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  person           Person                @relation("EngagedPerson", fields: [personId], references: [id], onDelete: Restrict)
+  legalEntity      LegalEntity?          @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
+  manager          Person?               @relation("ManagerPerson", fields: [managerPersonId], references: [id], onDelete: SetNull)
+  documents        Document[]
+  tasks            Task[]
+  terminations     TerminationRecord[]
   provisioningJobs M365ProvisioningJob[]
 
   @@index([organizationId, personId])
@@ -346,27 +351,27 @@ model Engagement {
 }
 
 model Document {
-  id               String         @id @default(uuid()) @db.Uuid
-  organizationId   String         @db.Uuid
-  legalEntityId    String?        @db.Uuid
-  personId         String?        @db.Uuid
-  engagementId     String?        @db.Uuid
-  category         String
-  title            String
-  status           DocumentStatus @default(DRAFT)
-  retentionUntil   DateTime?
-  legalHold        Boolean        @default(false)
-  tags             String[]       @default([])
-  metadata         Json?
-  version          Int            @default(1)
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
-  archivedAt       DateTime?
+  id             String         @id @default(uuid()) @db.Uuid
+  organizationId String         @db.Uuid
+  legalEntityId  String?        @db.Uuid
+  personId       String?        @db.Uuid
+  engagementId   String?        @db.Uuid
+  category       String
+  title          String
+  status         DocumentStatus @default(DRAFT)
+  retentionUntil DateTime?
+  legalHold      Boolean        @default(false)
+  tags           String[]       @default([])
+  metadata       Json?
+  version        Int            @default(1)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  archivedAt     DateTime?
 
-  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  legalEntity  LegalEntity?  @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
-  person       Person?       @relation(fields: [personId], references: [id], onDelete: SetNull)
-  engagement   Engagement?   @relation(fields: [engagementId], references: [id], onDelete: SetNull)
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  legalEntity  LegalEntity?       @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
+  person       Person?            @relation(fields: [personId], references: [id], onDelete: SetNull)
+  engagement   Engagement?        @relation(fields: [engagementId], references: [id], onDelete: SetNull)
   versions     DocumentVersion[]
   signatures   SignatureRequest[]
 
@@ -375,20 +380,20 @@ model Document {
 }
 
 model DocumentVersion {
-  id               String   @id @default(uuid()) @db.Uuid
-  organizationId   String   @db.Uuid
-  documentId       String   @db.Uuid
-  versionNumber    Int
-  storageKey       String
-  sha256           String
-  mimeType         String
-  byteSize         Int
-  metadata         Json?
-  createdByUserId  String?  @db.Uuid
-  createdAt        DateTime @default(now())
+  id              String   @id @default(uuid()) @db.Uuid
+  organizationId  String   @db.Uuid
+  documentId      String   @db.Uuid
+  versionNumber   Int
+  storageKey      String
+  sha256          String
+  mimeType        String
+  byteSize        Int
+  metadata        Json?
+  createdByUserId String?  @db.Uuid
+  createdAt       DateTime @default(now())
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  document     Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  document          Document           @relation(fields: [documentId], references: [id], onDelete: Cascade)
   signatureRequests SignatureRequest[]
 
   @@unique([documentId, versionNumber])
@@ -409,9 +414,9 @@ model SignatureRequest {
   createdAt            DateTime               @default(now())
   updatedAt            DateTime               @updatedAt
 
-  organization    Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  document        Document             @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  documentVersion DocumentVersion      @relation(fields: [documentVersionId], references: [id], onDelete: Restrict)
+  organization    Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  document        Document               @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  documentVersion DocumentVersion        @relation(fields: [documentVersionId], references: [id], onDelete: Restrict)
   participants    SignatureParticipant[]
   events          SignatureEvent[]
 
@@ -420,23 +425,23 @@ model SignatureRequest {
 }
 
 model SignatureParticipant {
-  id                 String                      @id @default(uuid()) @db.Uuid
-  organizationId     String                      @db.Uuid
-  signatureRequestId String                      @db.Uuid
-  personId           String                      @db.Uuid
+  id                 String                     @id @default(uuid()) @db.Uuid
+  organizationId     String                     @db.Uuid
+  signatureRequestId String                     @db.Uuid
+  personId           String                     @db.Uuid
   signingOrder       Int
   role               String
-  status             SignatureParticipantStatus  @default(PENDING)
+  status             SignatureParticipantStatus @default(PENDING)
   signedAt           DateTime?
   declinedReason     String?
   consentText        String?
   ipAddress          String?
   userAgent          String?
-  createdAt          DateTime                    @default(now())
+  createdAt          DateTime                   @default(now())
 
-  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  organization     Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   signatureRequest SignatureRequest @relation(fields: [signatureRequestId], references: [id], onDelete: Cascade)
-  person          Person          @relation(fields: [personId], references: [id], onDelete: Restrict)
+  person           Person           @relation(fields: [personId], references: [id], onDelete: Restrict)
 
   @@unique([signatureRequestId, signingOrder])
   @@index([organizationId, personId])
@@ -450,28 +455,28 @@ model SignatureEvent {
   payload            Json?
   createdAt          DateTime @default(now())
 
-  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  organization     Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   signatureRequest SignatureRequest @relation(fields: [signatureRequestId], references: [id], onDelete: Cascade)
 
   @@index([organizationId, createdAt])
 }
 
 model Task {
-  id               String      @id @default(uuid()) @db.Uuid
-  organizationId   String      @db.Uuid
-  personId         String?     @db.Uuid
-  engagementId     String?     @db.Uuid
-  assigneePersonId String?     @db.Uuid
+  id                String     @id @default(uuid()) @db.Uuid
+  organizationId    String     @db.Uuid
+  personId          String?    @db.Uuid
+  engagementId      String?    @db.Uuid
+  assigneePersonId  String?    @db.Uuid
   createdByPersonId String?    @db.Uuid
-  title            String
-  description      String?
-  status           TaskStatus  @default(TODO)
-  dueAt            DateTime?
-  completedAt      DateTime?
-  metadata         Json?
-  createdAt        DateTime    @default(now())
-  updatedAt        DateTime    @updatedAt
-  archivedAt       DateTime?
+  title             String
+  description       String?
+  status            TaskStatus @default(TODO)
+  dueAt             DateTime?
+  completedAt       DateTime?
+  metadata          Json?
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+  archivedAt        DateTime?
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   person       Person?      @relation("TaskSubjectPerson", fields: [personId], references: [id], onDelete: SetNull)
@@ -503,17 +508,17 @@ model Notification {
 }
 
 model SecurityClass {
-  id             String   @id @default(uuid()) @db.Uuid
-  organizationId String   @db.Uuid
-  legalEntityId  String?  @db.Uuid
-  code           String
-  name           String
-  authorizedShares Decimal @db.Decimal(24, 6)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id               String   @id @default(uuid()) @db.Uuid
+  organizationId   String   @db.Uuid
+  legalEntityId    String?  @db.Uuid
+  code             String
+  name             String
+  authorizedShares Decimal  @db.Decimal(24, 6)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  legalEntity  LegalEntity? @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  legalEntity  LegalEntity?        @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
   equityPlans  EquityPlan[]
   equityTxns   EquityTransaction[]
 
@@ -521,22 +526,22 @@ model SecurityClass {
 }
 
 model EquityPlan {
-  id             String   @id @default(uuid()) @db.Uuid
-  organizationId String   @db.Uuid
-  legalEntityId  String?  @db.Uuid
-  securityClassId String? @db.Uuid
-  code           String
-  name           String
-  reservedShares Decimal  @db.Decimal(24, 6)
-  effectiveDate  DateTime?
-  expiryDate     DateTime?
-  status         String   @default("DRAFT")
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id              String    @id @default(uuid()) @db.Uuid
+  organizationId  String    @db.Uuid
+  legalEntityId   String?   @db.Uuid
+  securityClassId String?   @db.Uuid
+  code            String
+  name            String
+  reservedShares  Decimal   @db.Decimal(24, 6)
+  effectiveDate   DateTime?
+  expiryDate      DateTime?
+  status          String    @default("DRAFT")
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  organization  Organization  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  legalEntity   LegalEntity?  @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
-  securityClass SecurityClass? @relation(fields: [securityClassId], references: [id], onDelete: SetNull)
+  organization  Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  legalEntity   LegalEntity?        @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
+  securityClass SecurityClass?      @relation(fields: [securityClassId], references: [id], onDelete: SetNull)
   grants        GrantAward[]
   equityTxns    EquityTransaction[]
 
@@ -544,29 +549,29 @@ model EquityPlan {
 }
 
 model GrantAward {
-  id               String   @id @default(uuid()) @db.Uuid
-  organizationId   String   @db.Uuid
-  personId         String   @db.Uuid
-  planId           String?  @db.Uuid
-  valuationId      String?  @db.Uuid
-  awardType        String
-  quantity         Decimal  @db.Decimal(24, 6)
-  exercisePrice    Decimal? @db.Decimal(24, 6)
-  currency         String   @default("USD")
-  grantDate        DateTime?
-  expirationDate   DateTime?
-  status           String   @default("DRAFT")
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @db.Uuid
+  personId       String    @db.Uuid
+  planId         String?   @db.Uuid
+  valuationId    String?   @db.Uuid
+  awardType      String
+  quantity       Decimal   @db.Decimal(24, 6)
+  exercisePrice  Decimal?  @db.Decimal(24, 6)
+  currency       String    @default("USD")
+  grantDate      DateTime?
+  expirationDate DateTime?
+  status         String    @default("DRAFT")
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  person       Person       @relation(fields: [personId], references: [id], onDelete: Restrict)
-  plan         EquityPlan?  @relation(fields: [planId], references: [id], onDelete: SetNull)
-  valuation    Valuation?   @relation(fields: [valuationId], references: [id], onDelete: SetNull)
+  organization     Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  person           Person              @relation(fields: [personId], references: [id], onDelete: Restrict)
+  plan             EquityPlan?         @relation(fields: [planId], references: [id], onDelete: SetNull)
+  valuation        Valuation?          @relation(fields: [valuationId], references: [id], onDelete: SetNull)
   vestingSchedules VestingSchedule[]
-  equityTxns   EquityTransaction[]
+  equityTxns       EquityTransaction[]
   exerciseRequests ExerciseRequest[]
-  terminations TerminationRecord[]
+  terminations     TerminationRecord[]
 
   @@index([organizationId, personId])
 }
@@ -592,51 +597,51 @@ model VestingSchedule {
 }
 
 model EquityTransaction {
-  id                     String                @id @default(uuid()) @db.Uuid
-  organizationId         String                @db.Uuid
-  legalEntityId          String?               @db.Uuid
-  securityClassId        String?               @db.Uuid
-  planId                 String?               @db.Uuid
-  grantId                String?               @db.Uuid
-  fromPersonId           String?               @db.Uuid
-  toPersonId             String?               @db.Uuid
-  type                   EquityTransactionType
-  effectiveAt            DateTime
-  quantity               Decimal               @db.Decimal(24, 6)
-  unitPrice              Decimal?              @db.Decimal(24, 6)
-  currency               String                @default("USD")
-  ledgerSequence         BigInt
-  correctionOfTxnId      String?               @db.Uuid
-  reason                 String?
-  metadata               Json?
-  createdByUserId        String?               @db.Uuid
-  createdAt              DateTime              @default(now())
+  id                String                @id @default(uuid()) @db.Uuid
+  organizationId    String                @db.Uuid
+  legalEntityId     String?               @db.Uuid
+  securityClassId   String?               @db.Uuid
+  planId            String?               @db.Uuid
+  grantId           String?               @db.Uuid
+  fromPersonId      String?               @db.Uuid
+  toPersonId        String?               @db.Uuid
+  type              EquityTransactionType
+  effectiveAt       DateTime
+  quantity          Decimal               @db.Decimal(24, 6)
+  unitPrice         Decimal?              @db.Decimal(24, 6)
+  currency          String                @default("USD")
+  ledgerSequence    BigInt
+  correctionOfTxnId String?               @db.Uuid
+  reason            String?
+  metadata          Json?
+  createdByUserId   String?               @db.Uuid
+  createdAt         DateTime              @default(now())
 
-  organization      Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  legalEntity       LegalEntity?      @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
-  securityClass     SecurityClass?    @relation(fields: [securityClassId], references: [id], onDelete: SetNull)
-  plan              EquityPlan?       @relation(fields: [planId], references: [id], onDelete: SetNull)
-  grant             GrantAward?       @relation(fields: [grantId], references: [id], onDelete: SetNull)
+  organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  legalEntity   LegalEntity?   @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
+  securityClass SecurityClass? @relation(fields: [securityClassId], references: [id], onDelete: SetNull)
+  plan          EquityPlan?    @relation(fields: [planId], references: [id], onDelete: SetNull)
+  grant         GrantAward?    @relation(fields: [grantId], references: [id], onDelete: SetNull)
 
   @@unique([organizationId, ledgerSequence])
   @@index([organizationId, effectiveAt])
 }
 
 model Valuation {
-  id             String   @id @default(uuid()) @db.Uuid
-  organizationId String   @db.Uuid
-  legalEntityId  String?  @db.Uuid
-  valuationType  String
-  effectiveDate  DateTime
-  reviewDate     DateTime?
-  enterpriseValue Decimal? @db.Decimal(24, 6)
-  equityValue    Decimal? @db.Decimal(24, 6)
-  commonFmv      Decimal? @db.Decimal(24, 6)
-  currency       String   @default("USD")
-  status         String   @default("DRAFT")
-  notes          String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id              String    @id @default(uuid()) @db.Uuid
+  organizationId  String    @db.Uuid
+  legalEntityId   String?   @db.Uuid
+  valuationType   String
+  effectiveDate   DateTime
+  reviewDate      DateTime?
+  enterpriseValue Decimal?  @db.Decimal(24, 6)
+  equityValue     Decimal?  @db.Decimal(24, 6)
+  commonFmv       Decimal?  @db.Decimal(24, 6)
+  currency        String    @default("USD")
+  status          String    @default("DRAFT")
+  notes           String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   legalEntity  LegalEntity? @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
@@ -646,22 +651,22 @@ model Valuation {
 }
 
 model FundraisingRound {
-  id             String   @id @default(uuid()) @db.Uuid
-  organizationId String   @db.Uuid
-  legalEntityId  String?  @db.Uuid
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @db.Uuid
+  legalEntityId  String?   @db.Uuid
   name           String
   stage          String
-  status         String   @default("DRAFT")
+  status         String    @default("DRAFT")
   closeDate      DateTime?
-  preMoney       Decimal? @db.Decimal(24, 6)
-  postMoney      Decimal? @db.Decimal(24, 6)
-  currency       String   @default("USD")
+  preMoney       Decimal?  @db.Decimal(24, 6)
+  postMoney      Decimal?  @db.Decimal(24, 6)
+  currency       String    @default("USD")
   assumptions    Json?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  legalEntity  LegalEntity? @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
+  organization Organization          @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  legalEntity  LegalEntity?          @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
   instruments  FinancingInstrument[]
   scenarios    FundraisingScenario[]
 
@@ -669,41 +674,41 @@ model FundraisingRound {
 }
 
 model FinancingInstrument {
-  id             String   @id @default(uuid()) @db.Uuid
-  organizationId String   @db.Uuid
-  roundId        String?  @db.Uuid
-  personId       String?  @db.Uuid
-  instrumentType String
-  principal      Decimal? @db.Decimal(24, 6)
+  id              String    @id @default(uuid()) @db.Uuid
+  organizationId  String    @db.Uuid
+  roundId         String?   @db.Uuid
+  personId        String?   @db.Uuid
+  instrumentType  String
+  principal       Decimal?  @db.Decimal(24, 6)
   interestRateBps Int?
-  valuationCap   Decimal? @db.Decimal(24, 6)
-  discountBps    Int?
-  maturityDate   DateTime?
-  metadata       Json?
-  createdAt      DateTime @default(now())
+  valuationCap    Decimal?  @db.Decimal(24, 6)
+  discountBps     Int?
+  maturityDate    DateTime?
+  metadata        Json?
+  createdAt       DateTime  @default(now())
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   round        FundraisingRound? @relation(fields: [roundId], references: [id], onDelete: SetNull)
-  person       Person?            @relation(fields: [personId], references: [id], onDelete: SetNull)
+  person       Person?           @relation(fields: [personId], references: [id], onDelete: SetNull)
 
   @@index([organizationId, instrumentType])
 }
 
 model ApprovalRequest {
-  id             String         @id @default(uuid()) @db.Uuid
-  organizationId String         @db.Uuid
-  requestType    String
-  title          String
-  status         ApprovalStatus @default(DRAFT)
-  requiredCount  Int            @default(1)
-  submittedAt    DateTime?
-  finalizedAt    DateTime?
-  metadata       Json?
-  createdByUserId String?       @db.Uuid
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  id              String         @id @default(uuid()) @db.Uuid
+  organizationId  String         @db.Uuid
+  requestType     String
+  title           String
+  status          ApprovalStatus @default(DRAFT)
+  requiredCount   Int            @default(1)
+  submittedAt     DateTime?
+  finalizedAt     DateTime?
+  metadata        Json?
+  createdByUserId String?        @db.Uuid
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   decisions    ApprovalDecision[]
 
   @@index([organizationId, status])
@@ -718,28 +723,28 @@ model ApprovalDecision {
   comment           String?
   decidedAt         DateTime @default(now())
 
-  organization    Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   approvalRequest ApprovalRequest @relation(fields: [approvalRequestId], references: [id], onDelete: Cascade)
-  approver       Person?         @relation(fields: [approverPersonId], references: [id], onDelete: SetNull)
+  approver        Person?         @relation(fields: [approverPersonId], references: [id], onDelete: SetNull)
 
   @@index([organizationId, approvalRequestId])
 }
 
 model M365ProvisioningJob {
-  id                String               @id @default(uuid()) @db.Uuid
-  organizationId    String               @db.Uuid
-  personId          String               @db.Uuid
-  engagementId      String?              @db.Uuid
+  id                String                @id @default(uuid()) @db.Uuid
+  organizationId    String                @db.Uuid
+  personId          String                @db.Uuid
+  engagementId      String?               @db.Uuid
   operation         String
   requestedUsername String?
   requestedEmail    String?
   payload           Json?
   status            ProvisioningJobStatus @default(DRAFT)
-  attempts          Int                  @default(0)
+  attempts          Int                   @default(0)
   lastError         String?
-  createdByUserId   String?              @db.Uuid
-  createdAt         DateTime             @default(now())
-  updatedAt         DateTime             @updatedAt
+  createdByUserId   String?               @db.Uuid
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   person       Person       @relation(fields: [personId], references: [id], onDelete: Restrict)
@@ -750,14 +755,14 @@ model M365ProvisioningJob {
 }
 
 model SystemSetting {
-  id             String   @id @default(uuid()) @db.Uuid
-  organizationId String   @db.Uuid
-  section        String
-  key            String
-  value          Json
-  updatedByUserId String? @db.Uuid
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id              String   @id @default(uuid()) @db.Uuid
+  organizationId  String   @db.Uuid
+  section         String
+  key             String
+  value           Json
+  updatedByUserId String?  @db.Uuid
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
 
@@ -766,43 +771,43 @@ model SystemSetting {
 }
 
 model ExerciseRequest {
-  id             String                @id @default(uuid()) @db.Uuid
-  organizationId String                @db.Uuid
-  grantId        String                @db.Uuid
-  personId       String                @db.Uuid
-  quantity       Decimal               @db.Decimal(24, 6)
-  exercisePrice  Decimal?              @db.Decimal(24, 6)
-  currency       String                @default("USD")
-  status         ExerciseRequestStatus @default(DRAFT)
-  requestedAt    DateTime              @default(now())
-  approvedAt     DateTime?
-  completedAt    DateTime?
-  notes          String?
-  createdByUserId String?              @db.Uuid
-  createdAt      DateTime              @default(now())
-  updatedAt      DateTime              @updatedAt
+  id              String                @id @default(uuid()) @db.Uuid
+  organizationId  String                @db.Uuid
+  grantId         String                @db.Uuid
+  personId        String                @db.Uuid
+  quantity        Decimal               @db.Decimal(24, 6)
+  exercisePrice   Decimal?              @db.Decimal(24, 6)
+  currency        String                @default("USD")
+  status          ExerciseRequestStatus @default(DRAFT)
+  requestedAt     DateTime              @default(now())
+  approvedAt      DateTime?
+  completedAt     DateTime?
+  notes           String?
+  createdByUserId String?               @db.Uuid
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  grant        GrantAward    @relation(fields: [grantId], references: [id], onDelete: Restrict)
-  person       Person        @relation(fields: [personId], references: [id], onDelete: Restrict)
+  grant        GrantAward   @relation(fields: [grantId], references: [id], onDelete: Restrict)
+  person       Person       @relation(fields: [personId], references: [id], onDelete: Restrict)
 
   @@index([organizationId, personId, status])
   @@index([organizationId, grantId])
 }
 
 model TerminationRecord {
-  id                  String   @id @default(uuid()) @db.Uuid
-  organizationId      String   @db.Uuid
-  engagementId        String?  @db.Uuid
-  grantId             String?  @db.Uuid
-  personId            String   @db.Uuid
-  terminatedAt        DateTime
-  vestedQuantityAtEnd Decimal? @db.Decimal(24, 6)
-  unvestedQuantityAtEnd Decimal? @db.Decimal(24, 6)
+  id                        String    @id @default(uuid()) @db.Uuid
+  organizationId            String    @db.Uuid
+  engagementId              String?   @db.Uuid
+  grantId                   String?   @db.Uuid
+  personId                  String    @db.Uuid
+  terminatedAt              DateTime
+  vestedQuantityAtEnd       Decimal?  @db.Decimal(24, 6)
+  unvestedQuantityAtEnd     Decimal?  @db.Decimal(24, 6)
   postTerminationExerciseBy DateTime?
-  overrideReason      String?
-  createdByUserId     String?  @db.Uuid
-  createdAt           DateTime @default(now())
+  overrideReason            String?
+  createdByUserId           String?   @db.Uuid
+  createdAt                 DateTime  @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   engagement   Engagement?  @relation(fields: [engagementId], references: [id], onDelete: SetNull)
@@ -813,38 +818,38 @@ model TerminationRecord {
 }
 
 model FundraisingScenario {
-  id             String   @id @default(uuid()) @db.Uuid
-  organizationId String   @db.Uuid
-  roundId        String?  @db.Uuid
-  name           String
-  assumptions    Json
-  output         Json?
-  createdByUserId String? @db.Uuid
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id              String   @id @default(uuid()) @db.Uuid
+  organizationId  String   @db.Uuid
+  roundId         String?  @db.Uuid
+  name            String
+  assumptions     Json
+  output          Json?
+  createdByUserId String?  @db.Uuid
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   round        FundraisingRound? @relation(fields: [roundId], references: [id], onDelete: SetNull)
 
   @@index([organizationId, roundId])
 }
 
 model Role {
-  id             String       @id @default(uuid()) @db.Uuid
-  organizationId String       @db.Uuid
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @db.Uuid
   code           String
   name           String
-  scope          RoleScope    @default(ORGANIZATION)
-  isSystem       Boolean      @default(false)
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  scope          RoleScope @default(ORGANIZATION)
+  isSystem       Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
-  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   rolePermissions RolePermission[]
   userRoles       UserRole[]
 
-  @@index([organizationId])
   @@unique([organizationId, code])
+  @@index([organizationId])
 }
 
 model Permission {
@@ -859,8 +864,8 @@ model Permission {
   organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   rolePermissions RolePermission[]
 
-  @@index([organizationId])
   @@unique([organizationId, code])
+  @@index([organizationId])
 }
 
 model RolePermission {
@@ -875,11 +880,11 @@ model RolePermission {
 }
 
 model UserRole {
-  userId      String    @db.Uuid
-  roleId      String    @db.Uuid
-  assignedBy  String?   @db.Uuid
-  assignedAt  DateTime  @default(now())
-  expiresAt   DateTime?
+  userId     String    @db.Uuid
+  roleId     String    @db.Uuid
+  assignedBy String?   @db.Uuid
+  assignedAt DateTime  @default(now())
+  expiresAt  DateTime?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
@@ -912,13 +917,13 @@ model AuditEvent {
 }
 
 model FeatureFlag {
-  id             String    @id @default(uuid()) @db.Uuid
-  organizationId String    @db.Uuid
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
   key            String
-  enabled        Boolean   @default(false)
+  enabled        Boolean  @default(false)
   description    String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
 
@@ -926,11 +931,11 @@ model FeatureFlag {
 }
 
 model Department {
-  id             String    @id @default(uuid()) @db.Uuid
-  organizationId String    @db.Uuid
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
   name           String
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
 
@@ -938,13 +943,13 @@ model Department {
 }
 
 model EngagementType {
-  id             String    @id @default(uuid()) @db.Uuid
-  organizationId String    @db.Uuid
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
   code           String
   name           String
-  isActive       Boolean   @default(true)
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
 

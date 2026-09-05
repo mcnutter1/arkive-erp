@@ -112,6 +112,7 @@ export class AuthController {
         id: actor.id,
         email: actor.email,
         organizationId: actor.organizationId,
+        roles: actor.roles ?? [],
         permissions: actor.permissions,
         isLocalAdmin: actor.isLocalAdmin ?? false,
         mustRotatePassword: actor.mustRotatePassword ?? false,

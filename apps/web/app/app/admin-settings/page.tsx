@@ -61,6 +61,24 @@ type GrantLettersConfig = {
 
 type SettingsModalView = 'm365' | 'ses' | 'esign' | 'letters' | null;
 
+type RbacRole = {
+  id: string;
+  code: string;
+  name: string;
+};
+
+type RbacSection = {
+  key: string;
+  label: string;
+  permissions: string[];
+  roleCodes: string[];
+};
+
+type RbacOverview = {
+  roles: RbacRole[];
+  sections: RbacSection[];
+};
+
 function defaultM365(): M365Config {
   return {
     tenantId: '',
@@ -109,10 +127,11 @@ export default function AdminSettingsPage() {
   const [awsSes, setAwsSes] = useState<AwsSesConfig>(defaultSes());
   const [esign, setEsign] = useState<ESignConfig>(defaultEsign());
   const [grantLetters, setGrantLetters] = useState<GrantLettersConfig>(defaultGrantLetters());
+  const [rbac, setRbac] = useState<RbacOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [modalView, setModalView] = useState<SettingsModalView>(null);
+  const [modalView, setModalView] = useState<SettingsModalView | 'rbac'>(null);
 
   const peopleOptions = useMemo(
     () => people.map((p) => ({ id: p.id, label: `${p.legalFirstName} ${p.legalLastName}` })),
@@ -175,11 +194,12 @@ export default function AdminSettingsPage() {
     setNotice(null);
 
     try {
-      const [integrations, equity, company, peopleResp] = await Promise.all([
+      const [integrations, equity, company, peopleResp, rbacResp] = await Promise.all([
         listSection('integrations'),
         listSection('equity'),
         listSection('company'),
         fetch(`${apiBaseUrl}/people?page=1&pageSize=100`, { credentials: 'include' }),
+        fetch(`${apiBaseUrl}/admin/rbac/sections`, { credentials: 'include' }),
       ]);
 
       if (!peopleResp.ok) {
@@ -193,10 +213,58 @@ export default function AdminSettingsPage() {
       const allSettings = [...integrations, ...equity, ...company];
       setSettings(allSettings);
       hydrateFormsFromSettings(allSettings);
+
+      if (rbacResp.ok) {
+        setRbac((await rbacResp.json()) as RbacOverview);
+      } else if (rbacResp.status === 403) {
+        setRbac(null);
+      } else {
+        setError(await readApiError(rbacResp, 'Unable to load RBAC settings.'));
+      }
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Unable to load settings.');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function saveRbac(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(null);
+    setNotice(null);
+
+    if (!rbac) {
+      setError('RBAC data is unavailable for this account.');
+      return;
+    }
+
+    const form = new FormData(event.currentTarget);
+    const sections = rbac.sections.map((section) => ({
+      section: section.key,
+      roleCodes: form
+        .getAll(`section-${section.key}`)
+        .map((value) => String(value).trim().toUpperCase())
+        .filter(Boolean),
+    }));
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/admin/rbac/sections`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sections }),
+      });
+
+      if (!response.ok) {
+        setError(await readApiError(response, 'Unable to save RBAC settings.'));
+        return;
+      }
+
+      setRbac((await response.json()) as RbacOverview);
+      setNotice('RBAC section access updated.');
+      setModalView(null);
+    } catch {
+      setError('Unable to save RBAC settings.');
     }
   }
 
@@ -356,6 +424,19 @@ export default function AdminSettingsPage() {
             Edit Grant Letter Defaults
           </button>
         </article>
+
+        <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 className="text-lg font-semibold">Role-Based Access</h2>
+          <p className="mt-1 text-sm text-slate-600">Assign which roles can open each site section and API module.</p>
+          <button
+            type="button"
+            onClick={() => setModalView('rbac')}
+            disabled={!rbac}
+            className="mt-4 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {rbac ? 'Edit RBAC Section Access' : 'RBAC Access Not Available'}
+          </button>
+        </article>
       </div>
 
       <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -373,6 +454,7 @@ export default function AdminSettingsPage() {
           equity: {
             grantLetters: readSettingValue('equity', 'grantLetters'),
           },
+          rbac,
         }, null, 2)}</pre>
       </article>
 
@@ -466,6 +548,49 @@ export default function AdminSettingsPage() {
             <button type="button" onClick={() => setModalView(null)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm hover:bg-slate-100">Cancel</button>
           </div>
         </form>
+      </Modal>
+
+      <Modal
+        open={modalView === 'rbac'}
+        title="Role-Based Access Control"
+        description="Choose which role assignments unlock each application section and related API endpoints."
+        onClose={() => setModalView(null)}
+        widthClassName="max-w-5xl"
+      >
+        {rbac ? (
+          <form className="grid gap-4" onSubmit={saveRbac}>
+            {rbac.sections.map((section) => (
+              <div key={section.key} className="rounded-xl border border-slate-200 p-3">
+                <p className="text-sm font-semibold text-slate-900">{section.label}</p>
+                <p className="mt-1 text-xs text-slate-600">Permissions: {section.permissions.join(', ')}</p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {rbac.roles.map((role) => (
+                    <label key={`${section.key}-${role.code}`} className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-700">
+                      <input
+                        type="checkbox"
+                        name={`section-${section.key}`}
+                        value={role.code}
+                        defaultChecked={section.roleCodes.includes(role.code)}
+                      />
+                      <span>{role.name}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ))}
+
+            <div className="flex gap-2">
+              <button type="submit" className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800">
+                Save RBAC Access
+              </button>
+              <button type="button" onClick={() => setModalView(null)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm hover:bg-slate-100">
+                Cancel
+              </button>
+            </div>
+          </form>
+        ) : (
+          <p className="text-sm text-slate-600">RBAC settings are not available for this session.</p>
+        )}
       </Modal>
     </section>
   );

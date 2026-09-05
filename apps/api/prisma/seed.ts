@@ -35,6 +35,8 @@ async function main(): Promise<void> {
     ['system.manage', 'System manage', 'system', 'manage'],
     ['admin.settings.read', 'Read admin settings', 'admin', 'settings_read'],
     ['admin.settings.write', 'Write admin settings', 'admin', 'settings_write'],
+    ['admin.rbac.read', 'Read RBAC settings', 'admin', 'rbac_read'],
+    ['admin.rbac.write', 'Write RBAC settings', 'admin', 'rbac_write'],
     ['search.read', 'Global search read', 'search', 'read'],
     ['reports.read', 'Read reports', 'reports', 'read'],
     ['reports.export', 'Export reports', 'reports', 'export'],
@@ -75,18 +77,12 @@ async function main(): Promise<void> {
   }
 
   const roles = [
-    ['SUPER_ADMIN', 'Super Administrator'],
-    ['ADMIN', 'Administrator'],
-    ['HR', 'HR / People Operations'],
-    ['EQUITY_ADMIN', 'Equity Administrator'],
-    ['FINANCE', 'Finance'],
-    ['LEGAL', 'Legal / Outside Counsel'],
-    ['MANAGER', 'Manager'],
-    ['EMPLOYEE', 'Employee'],
+    ['ADMIN', 'Admin'],
+    ['HR', 'HR'],
     ['CONTRACTOR', 'Contractor'],
     ['ADVISOR', 'Advisor'],
-    ['INVESTOR', 'Investor / Shareholder'],
-    ['EXTERNAL_SIGNER', 'External Signer'],
+    ['EMPLOYEE', 'Employee'],
+    ['GUEST', 'Guest'],
   ] as const;
 
   for (const [code, name] of roles) {
@@ -100,6 +96,114 @@ async function main(): Promise<void> {
         isSystem: true,
       },
     });
+  }
+
+  const rolePermissions: Record<string, string[]> = {
+    ADMIN: permissions.map(([code]) => code),
+    HR: [
+      'people.read',
+      'people.write',
+      'tasks.read',
+      'tasks.write',
+      'approvals.read',
+      'approvals.write',
+      'approvals.approve',
+      'documents.read',
+      'documents.write',
+      'documents.sign.request',
+      'documents.sign.self',
+      'search.read',
+      'm365.read',
+      'm365.write',
+      'equity.read',
+      'equity.write',
+      'portal.read.self',
+      'notifications.read.self',
+    ],
+    EMPLOYEE: [
+      'portal.read.self',
+      'documents.sign.self',
+      'tasks.read',
+      'notifications.read.self',
+    ],
+    CONTRACTOR: [
+      'portal.read.self',
+      'documents.sign.self',
+      'tasks.read',
+      'notifications.read.self',
+    ],
+    ADVISOR: [
+      'portal.read.self',
+      'documents.sign.self',
+      'equity.read',
+      'fundraising.read',
+      'scenarios.read',
+      'valuations.read',
+      'search.read',
+    ],
+    GUEST: ['portal.read.self', 'documents.sign.self'],
+  };
+
+  const roleByCode = new Map(
+    (
+      await prisma.role.findMany({
+        where: {
+          organizationId: org.id,
+          code: { in: roles.map(([code]) => code) },
+        },
+        select: {
+          id: true,
+          code: true,
+        },
+      })
+    ).map((role) => [role.code, role.id]),
+  );
+
+  const permissionByCode = new Map(
+    (
+      await prisma.permission.findMany({
+        where: {
+          organizationId: org.id,
+        },
+        select: {
+          id: true,
+          code: true,
+        },
+      })
+    ).map((permission) => [permission.code, permission.id]),
+  );
+
+  for (const [roleCode, permissionCodes] of Object.entries(rolePermissions)) {
+    const roleId = roleByCode.get(roleCode);
+    if (!roleId) {
+      continue;
+    }
+
+    await prisma.rolePermission.deleteMany({
+      where: {
+        roleId,
+      },
+    });
+
+    const createRows = permissionCodes
+      .map((permissionCode) => {
+        const permissionId = permissionByCode.get(permissionCode);
+        if (!permissionId) {
+          return null;
+        }
+        return {
+          roleId,
+          permissionId,
+        };
+      })
+      .filter((row): row is { roleId: string; permissionId: string } => Boolean(row));
+
+    if (createRows.length > 0) {
+      await prisma.rolePermission.createMany({
+        data: createRows,
+        skipDuplicates: true,
+      });
+    }
   }
 
   const departments = ['Engineering', 'Operations', 'People', 'Finance', 'Legal'];
