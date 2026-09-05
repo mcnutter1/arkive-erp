@@ -2,12 +2,16 @@
 
 import { FormEvent, useState } from 'react';
 
+import { Modal } from '../_components/modal';
+import { PageHero } from '../_components/page-hero';
+
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? '/api/v1';
 
 export default function SetupSecurityPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -59,46 +63,73 @@ export default function SetupSecurityPage() {
   }
 
   return (
-    <section className="mx-auto max-w-xl rounded-2xl border border-amber-200 bg-white p-6 shadow-sm">
-      <p className="text-xs uppercase tracking-[0.18em] text-amber-700">Security Required</p>
-      <h1 className="mt-2 text-2xl font-semibold text-slate-900">Rotate Default Admin Password</h1>
-      <p className="mt-2 text-sm text-slate-600">
-        Default bootstrap credentials are active. Change the local admin password before continuing.
-      </p>
+    <section className="space-y-5">
+      <PageHero
+        eyebrow="Security Required"
+        title="Rotate Default Admin Password"
+        description="Bootstrap credentials are active. Rotate the local admin password before proceeding."
+      />
 
-      <form className="mt-5 space-y-3" onSubmit={onSubmit}>
-        <input
-          name="currentPassword"
-          type="password"
-          required
-          placeholder="Current password"
-          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-        />
-        <input
-          name="newPassword"
-          type="password"
-          required
-          placeholder="New password (min 12 chars)"
-          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-        />
-        <input
-          name="confirmPassword"
-          type="password"
-          required
-          placeholder="Confirm new password"
-          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-        />
+      <article className="mx-auto max-w-xl rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <p className="text-sm text-slate-600">Open the password rotation flow to continue setup.</p>
         <button
-          type="submit"
-          disabled={saving}
-          className="w-full rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+          type="button"
+          onClick={() => setModalOpen(true)}
+          className="mt-3 w-full rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800"
         >
-          {saving ? 'Saving...' : 'Update Password'}
+          Open Password Rotation
         </button>
-      </form>
 
-      {error ? <p className="mt-3 text-sm text-rose-700">{error}</p> : null}
-      {success ? <p className="mt-3 text-sm text-emerald-700">{success}</p> : null}
+        {error ? <p className="mt-3 text-sm text-rose-700">{error}</p> : null}
+        {success ? <p className="mt-3 text-sm text-emerald-700">{success}</p> : null}
+      </article>
+
+      <Modal
+        open={modalOpen}
+        title="Rotate Admin Password"
+        description="Default bootstrap credentials must be replaced immediately."
+        onClose={() => setModalOpen(false)}
+      >
+        <form className="space-y-3" onSubmit={onSubmit}>
+          <input
+            name="currentPassword"
+            type="password"
+            required
+            placeholder="Current password"
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+          />
+          <input
+            name="newPassword"
+            type="password"
+            required
+            placeholder="New password (min 12 chars)"
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+          />
+          <input
+            name="confirmPassword"
+            type="password"
+            required
+            placeholder="Confirm new password"
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+          />
+          <div className="flex gap-2">
+            <button
+              type="submit"
+              disabled={saving}
+              className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {saving ? 'Saving...' : 'Update Password'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setModalOpen(false)}
+              className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      </Modal>
     </section>
   );
 }

@@ -2,6 +2,8 @@
 
 import { FormEvent, useEffect, useState } from 'react';
 
+import { Modal } from '../_components/modal';
+import { PageHero } from '../_components/page-hero';
 import { readApiError } from '../_utils/read-api-error';
 
 type Round = {
@@ -28,6 +30,8 @@ export default function FundraisingPage() {
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [roundModalOpen, setRoundModalOpen] = useState(false);
+  const [scenarioModalOpen, setScenarioModalOpen] = useState(false);
 
   async function loadRounds() {
     setLoading(true);
@@ -108,6 +112,7 @@ export default function FundraisingPage() {
       }
 
       event.currentTarget.reset();
+      setRoundModalOpen(false);
       await loadRounds();
     } catch {
       setError('Unable to create round.');
@@ -148,6 +153,7 @@ export default function FundraisingPage() {
       }
 
       event.currentTarget.reset();
+      setScenarioModalOpen(false);
       await loadScenarios(selectedRoundId);
     } catch {
       setError('Unable to create scenario.');
@@ -175,35 +181,37 @@ export default function FundraisingPage() {
 
   return (
     <section className="space-y-5">
-      <header className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h1 className="text-xl font-semibold">Fundraising</h1>
-        <p className="mt-2 text-sm text-slate-600">Create rounds, define scenarios, and run simulations.</p>
-      </header>
-
-      <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="text-lg font-semibold">Create Round</h2>
-        <form className="mt-4 grid gap-3 md:grid-cols-4" onSubmit={onCreateRound}>
-          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-            <span>Round Name</span>
-            <input name="name" required placeholder="Seed 2026" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900" />
-          </label>
-          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-            <span>Stage</span>
-            <input name="stage" required placeholder="SEED" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900" />
-          </label>
-          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-            <span>Pre-Money Value</span>
-            <input
-              name="preMoney"
-              placeholder="Optional"
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
-            />
-          </label>
-          <button type="submit" className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800">
-            Create
-          </button>
-        </form>
-      </article>
+      <PageHero
+        eyebrow="Capital Planning"
+        title="Fundraising"
+        description="Define rounds, compare scenarios, and simulate dilution assumptions in one workspace."
+        actions={
+          <>
+            <button
+              type="button"
+              onClick={() => setRoundModalOpen(true)}
+              className="rounded-lg bg-slate-900 px-3 py-2 text-sm text-white hover:bg-slate-800"
+            >
+              New Round
+            </button>
+            <button
+              type="button"
+              onClick={() => setScenarioModalOpen(true)}
+              disabled={!selectedRoundId}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 disabled:opacity-60"
+            >
+              New Scenario
+            </button>
+            <button
+              type="button"
+              onClick={() => void loadRounds()}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-100"
+            >
+              Refresh
+            </button>
+          </>
+        }
+      />
 
       <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold">Rounds</h2>
@@ -228,45 +236,11 @@ export default function FundraisingPage() {
         )}
       </article>
 
-      <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="text-lg font-semibold">Create Scenario</h2>
-        <p className="mt-1 text-sm text-slate-600">Attach financing assumptions to the selected round and run simulations.</p>
-        <form className="mt-4 grid gap-3 md:grid-cols-4" onSubmit={onCreateScenario}>
-          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-            <span>Scenario Name</span>
-            <input name="name" required placeholder="Base Case" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900" />
-          </label>
-          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-            <span>Raise Amount</span>
-            <input
-              name="raiseAmount"
-              type="number"
-              step="0.01"
-              min="0"
-              placeholder="2500000"
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
-            />
-          </label>
-          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-            <span>Scenario Pre-Money</span>
-            <input
-              name="scenarioPreMoney"
-              type="number"
-              step="0.01"
-              min="0"
-              placeholder="12000000"
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
-            />
-          </label>
-          <button
-            type="submit"
-            disabled={!selectedRoundId}
-            className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            Add Scenario
-          </button>
-        </form>
-      </article>
+      {!selectedRoundId ? (
+        <article className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+          Select or create a round to start adding scenarios.
+        </article>
+      ) : null}
 
       <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold">Scenarios</h2>
@@ -296,6 +270,96 @@ export default function FundraisingPage() {
       </article>
 
       {error ? <p className="text-sm text-rose-700">{error}</p> : null}
+
+      <Modal
+        open={roundModalOpen}
+        title="Create Funding Round"
+        description="Establish the round shell before adding scenarios."
+        onClose={() => setRoundModalOpen(false)}
+      >
+        <form className="grid gap-3" onSubmit={onCreateRound}>
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Round Name</span>
+            <input name="name" required placeholder="Seed 2026" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900" />
+          </label>
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Stage</span>
+            <input name="stage" required placeholder="SEED" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900" />
+          </label>
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Pre-Money Value</span>
+            <input
+              name="preMoney"
+              placeholder="Optional"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+            />
+          </label>
+          <div className="flex gap-2">
+            <button type="submit" className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800">
+              Create
+            </button>
+            <button
+              type="button"
+              onClick={() => setRoundModalOpen(false)}
+              className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        open={scenarioModalOpen}
+        title="Create Scenario"
+        description="Attach financing assumptions to the selected round."
+        onClose={() => setScenarioModalOpen(false)}
+      >
+        <form className="grid gap-3" onSubmit={onCreateScenario}>
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Scenario Name</span>
+            <input name="name" required placeholder="Base Case" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900" />
+          </label>
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Raise Amount</span>
+            <input
+              name="raiseAmount"
+              type="number"
+              step="0.01"
+              min="0"
+              placeholder="2500000"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+            />
+          </label>
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Scenario Pre-Money</span>
+            <input
+              name="scenarioPreMoney"
+              type="number"
+              step="0.01"
+              min="0"
+              placeholder="12000000"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+            />
+          </label>
+          <div className="flex gap-2">
+            <button
+              type="submit"
+              disabled={!selectedRoundId}
+              className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Add Scenario
+            </button>
+            <button
+              type="button"
+              onClick={() => setScenarioModalOpen(false)}
+              className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      </Modal>
     </section>
   );
 }

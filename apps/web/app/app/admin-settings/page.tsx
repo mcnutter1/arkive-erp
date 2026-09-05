@@ -2,6 +2,8 @@
 
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 
+import { Modal } from '../_components/modal';
+import { PageHero } from '../_components/page-hero';
 import { readApiError } from '../_utils/read-api-error';
 
 type Setting = {
@@ -57,6 +59,8 @@ type GrantLettersConfig = {
   autoCreateSignatureRequest: boolean;
 };
 
+type SettingsModalView = 'm365' | 'ses' | 'esign' | 'letters' | null;
+
 function defaultM365(): M365Config {
   return {
     tenantId: '',
@@ -108,6 +112,7 @@ export default function AdminSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [modalView, setModalView] = useState<SettingsModalView>(null);
 
   const peopleOptions = useMemo(
     () => people.map((p) => ({ id: p.id, label: `${p.legalFirstName} ${p.legalLastName}` })),
@@ -220,6 +225,7 @@ export default function AdminSettingsPage() {
     try {
       await upsertSetting('integrations', 'm365', m365 as unknown as Record<string, unknown>);
       setNotice('M365 settings saved.');
+      setModalView(null);
       await loadSettings();
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Unable to save M365 settings.');
@@ -234,6 +240,7 @@ export default function AdminSettingsPage() {
     try {
       await upsertSetting('integrations', 'awsSes', awsSes as unknown as Record<string, unknown>);
       setNotice('AWS SES settings saved.');
+      setModalView(null);
       await loadSettings();
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Unable to save AWS SES settings.');
@@ -248,6 +255,7 @@ export default function AdminSettingsPage() {
     try {
       await upsertSetting('integrations', 'esign', esign as unknown as Record<string, unknown>);
       setNotice('E-sign settings saved.');
+      setModalView(null);
       await loadSettings();
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Unable to save e-sign settings.');
@@ -273,6 +281,7 @@ export default function AdminSettingsPage() {
       });
 
       setNotice('Grant letter settings saved.');
+      setModalView(null);
       await loadSettings();
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Unable to save grant letter settings.');
@@ -281,83 +290,71 @@ export default function AdminSettingsPage() {
 
   return (
     <section className="space-y-5">
-      <header className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h1 className="text-xl font-semibold">Admin Integrations and E-Sign</h1>
-        <p className="mt-2 text-sm text-slate-600">
-          Configure M365, email delivery, e-sign providers, and grant letter defaults.
-        </p>
-        <button
-          type="button"
-          onClick={() => void loadSettings()}
-          className="mt-3 rounded-lg border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50"
-        >
-          {loading ? 'Refreshing...' : 'Refresh Settings'}
-        </button>
-      </header>
+      <PageHero
+        eyebrow="Administration"
+        title="Integrations and E-Sign"
+        description="Configure Microsoft 365, mail delivery, e-sign, and grant letter defaults in dedicated editors."
+        actions={
+          <button
+            type="button"
+            onClick={() => void loadSettings()}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-100"
+          >
+            {loading ? 'Refreshing...' : 'Refresh Settings'}
+          </button>
+        }
+      />
+
+      {error ? <p className="text-sm text-rose-700">{error}</p> : null}
+      {notice ? <p className="text-sm text-emerald-700">{notice}</p> : null}
 
       <div className="grid gap-5 xl:grid-cols-2">
         <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <h2 className="text-lg font-semibold">Microsoft 365</h2>
-          <form className="mt-4 grid gap-3" onSubmit={saveM365}>
-            <input value={m365.tenantId} onChange={(e) => setM365((prev) => ({ ...prev, tenantId: e.target.value }))} placeholder="Tenant ID" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-            <input value={m365.clientId} onChange={(e) => setM365((prev) => ({ ...prev, clientId: e.target.value }))} placeholder="Client ID" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-            <input type="password" value={m365.clientSecret} onChange={(e) => setM365((prev) => ({ ...prev, clientSecret: e.target.value }))} placeholder="Client Secret" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-            <input value={m365.defaultDomain} onChange={(e) => setM365((prev) => ({ ...prev, defaultDomain: e.target.value }))} placeholder="Default Domain" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-            <input type="password" value={m365.webhookSecret} onChange={(e) => setM365((prev) => ({ ...prev, webhookSecret: e.target.value }))} placeholder="Webhook Secret" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-            <button type="submit" className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800">Save M365 Settings</button>
-          </form>
+          <p className="mt-1 text-sm text-slate-600">Tenant and application credentials, webhook secret, and domain defaults.</p>
+          <button
+            type="button"
+            onClick={() => setModalView('m365')}
+            className="mt-4 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100"
+          >
+            Edit M365 Settings
+          </button>
         </article>
 
         <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <h2 className="text-lg font-semibold">AWS SES Email</h2>
-          <form className="mt-4 grid gap-3" onSubmit={saveAwsSes}>
-            <input value={awsSes.region} onChange={(e) => setAwsSes((prev) => ({ ...prev, region: e.target.value }))} placeholder="Region (e.g. us-east-1)" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-            <input value={awsSes.accessKeyId} onChange={(e) => setAwsSes((prev) => ({ ...prev, accessKeyId: e.target.value }))} placeholder="Access Key ID" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-            <input type="password" value={awsSes.secretAccessKey} onChange={(e) => setAwsSes((prev) => ({ ...prev, secretAccessKey: e.target.value }))} placeholder="Secret Access Key" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-            <input type="email" value={awsSes.fromEmail} onChange={(e) => setAwsSes((prev) => ({ ...prev, fromEmail: e.target.value }))} placeholder="From Email" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-            <input type="email" value={awsSes.replyToEmail} onChange={(e) => setAwsSes((prev) => ({ ...prev, replyToEmail: e.target.value }))} placeholder="Reply-To Email" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-            <button type="submit" className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800">Save SES Settings</button>
-          </form>
+          <p className="mt-1 text-sm text-slate-600">Configure region, credentials, and sender defaults for outbound email.</p>
+          <button
+            type="button"
+            onClick={() => setModalView('ses')}
+            className="mt-4 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100"
+          >
+            Edit SES Settings
+          </button>
         </article>
 
         <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <h2 className="text-lg font-semibold">E-Sign Provider</h2>
-          <form className="mt-4 grid gap-3" onSubmit={saveEsign}>
-            <label className="inline-flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={esign.enabled} onChange={(e) => setEsign((prev) => ({ ...prev, enabled: e.target.checked }))} />
-              Enabled
-            </label>
-            <select value={esign.provider} onChange={(e) => setEsign((prev) => ({ ...prev, provider: e.target.value }))} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
-              <option value="native">Native</option>
-              <option value="docusign">DocuSign</option>
-              <option value="adobe-sign">Adobe Sign</option>
-            </select>
-            <input type="password" value={esign.apiKey} onChange={(e) => setEsign((prev) => ({ ...prev, apiKey: e.target.value }))} placeholder="API Key / Token" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-            <input value={esign.accountId} onChange={(e) => setEsign((prev) => ({ ...prev, accountId: e.target.value }))} placeholder="Account ID" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-            <input type="password" value={esign.webhookSecret} onChange={(e) => setEsign((prev) => ({ ...prev, webhookSecret: e.target.value }))} placeholder="Webhook Secret" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-            <button type="submit" className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800">Save E-Sign Settings</button>
-          </form>
+          <p className="mt-1 text-sm text-slate-600">Switch provider and keys without mixing unrelated settings in one view.</p>
+          <button
+            type="button"
+            onClick={() => setModalView('esign')}
+            className="mt-4 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100"
+          >
+            Edit E-Sign Settings
+          </button>
         </article>
 
         <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <h2 className="text-lg font-semibold">Grant Letter Defaults</h2>
-          <form className="mt-4 grid gap-3" onSubmit={saveGrantLetters}>
-            <input value={grantLetters.companyName} onChange={(e) => setGrantLetters((prev) => ({ ...prev, companyName: e.target.value }))} placeholder="Company Name" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-            <input value={grantLetters.legalEntityName} onChange={(e) => setGrantLetters((prev) => ({ ...prev, legalEntityName: e.target.value }))} placeholder="Legal Entity Name" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-            <select value={grantLetters.signatoryPersonId} onChange={(e) => setGrantLetters((prev) => ({ ...prev, signatoryPersonId: e.target.value }))} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
-              <option value="">Select signatory person</option>
-              {peopleOptions.map((person) => (
-                <option key={person.id} value={person.id}>{person.label}</option>
-              ))}
-            </select>
-            <input value={grantLetters.signatoryName} onChange={(e) => setGrantLetters((prev) => ({ ...prev, signatoryName: e.target.value }))} placeholder="Signatory Name" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-            <input value={grantLetters.signatoryTitle} onChange={(e) => setGrantLetters((prev) => ({ ...prev, signatoryTitle: e.target.value }))} placeholder="Signatory Title" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-            <label className="inline-flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={grantLetters.autoCreateSignatureRequest} onChange={(e) => setGrantLetters((prev) => ({ ...prev, autoCreateSignatureRequest: e.target.checked }))} />
-              Auto-create e-sign request in grant workflow
-            </label>
-            <button type="submit" className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800">Save Grant Letter Settings</button>
-          </form>
+          <p className="mt-1 text-sm text-slate-600">Control legal entity names and default signatory behavior for grant packets.</p>
+          <button
+            type="button"
+            onClick={() => setModalView('letters')}
+            className="mt-4 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100"
+          >
+            Edit Grant Letter Defaults
+          </button>
         </article>
       </div>
 
@@ -379,8 +376,97 @@ export default function AdminSettingsPage() {
         }, null, 2)}</pre>
       </article>
 
-      {error ? <p className="text-sm text-rose-700">{error}</p> : null}
-      {notice ? <p className="text-sm text-emerald-700">{notice}</p> : null}
+      <Modal
+        open={modalView === 'm365'}
+        title="Microsoft 365 Settings"
+        description="Tenant and app credentials used for provisioning sync."
+        onClose={() => setModalView(null)}
+      >
+        <form className="grid gap-3" onSubmit={saveM365}>
+          <input value={m365.tenantId} onChange={(e) => setM365((prev) => ({ ...prev, tenantId: e.target.value }))} placeholder="Tenant ID" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          <input value={m365.clientId} onChange={(e) => setM365((prev) => ({ ...prev, clientId: e.target.value }))} placeholder="Client ID" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          <input type="password" value={m365.clientSecret} onChange={(e) => setM365((prev) => ({ ...prev, clientSecret: e.target.value }))} placeholder="Client Secret" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          <input value={m365.defaultDomain} onChange={(e) => setM365((prev) => ({ ...prev, defaultDomain: e.target.value }))} placeholder="Default Domain" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          <input type="password" value={m365.webhookSecret} onChange={(e) => setM365((prev) => ({ ...prev, webhookSecret: e.target.value }))} placeholder="Webhook Secret" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          <div className="flex gap-2">
+            <button type="submit" className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800">Save M365 Settings</button>
+            <button type="button" onClick={() => setModalView(null)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm hover:bg-slate-100">Cancel</button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        open={modalView === 'ses'}
+        title="AWS SES Settings"
+        description="Outbound email delivery settings for notifications and workflows."
+        onClose={() => setModalView(null)}
+      >
+        <form className="grid gap-3" onSubmit={saveAwsSes}>
+          <input value={awsSes.region} onChange={(e) => setAwsSes((prev) => ({ ...prev, region: e.target.value }))} placeholder="Region (e.g. us-east-1)" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          <input value={awsSes.accessKeyId} onChange={(e) => setAwsSes((prev) => ({ ...prev, accessKeyId: e.target.value }))} placeholder="Access Key ID" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          <input type="password" value={awsSes.secretAccessKey} onChange={(e) => setAwsSes((prev) => ({ ...prev, secretAccessKey: e.target.value }))} placeholder="Secret Access Key" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          <input type="email" value={awsSes.fromEmail} onChange={(e) => setAwsSes((prev) => ({ ...prev, fromEmail: e.target.value }))} placeholder="From Email" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          <input type="email" value={awsSes.replyToEmail} onChange={(e) => setAwsSes((prev) => ({ ...prev, replyToEmail: e.target.value }))} placeholder="Reply-To Email" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          <div className="flex gap-2">
+            <button type="submit" className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800">Save SES Settings</button>
+            <button type="button" onClick={() => setModalView(null)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm hover:bg-slate-100">Cancel</button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        open={modalView === 'esign'}
+        title="E-Sign Settings"
+        description="Provider and credential controls for signature workflows."
+        onClose={() => setModalView(null)}
+      >
+        <form className="grid gap-3" onSubmit={saveEsign}>
+          <label className="inline-flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={esign.enabled} onChange={(e) => setEsign((prev) => ({ ...prev, enabled: e.target.checked }))} />
+            Enabled
+          </label>
+          <select value={esign.provider} onChange={(e) => setEsign((prev) => ({ ...prev, provider: e.target.value }))} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+            <option value="native">Native</option>
+            <option value="docusign">DocuSign</option>
+            <option value="adobe-sign">Adobe Sign</option>
+          </select>
+          <input type="password" value={esign.apiKey} onChange={(e) => setEsign((prev) => ({ ...prev, apiKey: e.target.value }))} placeholder="API Key / Token" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          <input value={esign.accountId} onChange={(e) => setEsign((prev) => ({ ...prev, accountId: e.target.value }))} placeholder="Account ID" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          <input type="password" value={esign.webhookSecret} onChange={(e) => setEsign((prev) => ({ ...prev, webhookSecret: e.target.value }))} placeholder="Webhook Secret" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          <div className="flex gap-2">
+            <button type="submit" className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800">Save E-Sign Settings</button>
+            <button type="button" onClick={() => setModalView(null)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm hover:bg-slate-100">Cancel</button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        open={modalView === 'letters'}
+        title="Grant Letter Defaults"
+        description="Company labels, signatory defaults, and workflow behavior."
+        onClose={() => setModalView(null)}
+      >
+        <form className="grid gap-3" onSubmit={saveGrantLetters}>
+          <input value={grantLetters.companyName} onChange={(e) => setGrantLetters((prev) => ({ ...prev, companyName: e.target.value }))} placeholder="Company Name" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          <input value={grantLetters.legalEntityName} onChange={(e) => setGrantLetters((prev) => ({ ...prev, legalEntityName: e.target.value }))} placeholder="Legal Entity Name" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          <select value={grantLetters.signatoryPersonId} onChange={(e) => setGrantLetters((prev) => ({ ...prev, signatoryPersonId: e.target.value }))} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+            <option value="">Select signatory person</option>
+            {peopleOptions.map((person) => (
+              <option key={person.id} value={person.id}>{person.label}</option>
+            ))}
+          </select>
+          <input value={grantLetters.signatoryName} onChange={(e) => setGrantLetters((prev) => ({ ...prev, signatoryName: e.target.value }))} placeholder="Signatory Name" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          <input value={grantLetters.signatoryTitle} onChange={(e) => setGrantLetters((prev) => ({ ...prev, signatoryTitle: e.target.value }))} placeholder="Signatory Title" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          <label className="inline-flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={grantLetters.autoCreateSignatureRequest} onChange={(e) => setGrantLetters((prev) => ({ ...prev, autoCreateSignatureRequest: e.target.checked }))} />
+            Auto-create e-sign request in grant workflow
+          </label>
+          <div className="flex gap-2">
+            <button type="submit" className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800">Save Grant Letter Settings</button>
+            <button type="button" onClick={() => setModalView(null)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm hover:bg-slate-100">Cancel</button>
+          </div>
+        </form>
+      </Modal>
     </section>
   );
 }

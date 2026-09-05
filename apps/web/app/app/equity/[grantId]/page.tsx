@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 
+import { Modal } from '../../_components/modal';
+import { PageHero } from '../../_components/page-hero';
 import { readApiError } from '../../_utils/read-api-error';
 
 type GrantDetailResponse = {
@@ -136,6 +138,8 @@ export default function GrantDetailPage() {
   const [savingExercise, setSavingExercise] = useState(false);
   const [savingLetter, setSavingLetter] = useState(false);
   const [savingESign, setSavingESign] = useState(false);
+  const [exerciseModalOpen, setExerciseModalOpen] = useState(false);
+  const [vestingModalOpen, setVestingModalOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -195,6 +199,7 @@ export default function GrantDetailPage() {
   async function refreshVesting(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     await loadPageData();
+    setVestingModalOpen(false);
   }
 
   async function createExerciseRequest(event: FormEvent<HTMLFormElement>) {
@@ -231,6 +236,7 @@ export default function GrantDetailPage() {
       }
 
       event.currentTarget.reset();
+      setExerciseModalOpen(false);
       setNotice('Exercise request submitted.');
       await loadPageData();
     } catch {
@@ -474,17 +480,40 @@ export default function GrantDetailPage() {
 
   return (
     <section className="space-y-5">
-      <header className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h1 className="text-xl font-semibold">Grant Detail</h1>
-            <p className="mt-1 text-sm text-slate-600">{detail.grant.awardType} award for {recipientName}</p>
-          </div>
-          <Link href="/app/equity" className="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50">
-            Back to Equity
-          </Link>
-        </div>
-      </header>
+      <PageHero
+        eyebrow="Grant Lifecycle"
+        title="Grant Detail"
+        description={`${detail.grant.awardType} award for ${recipientName}`}
+        actions={
+          <>
+            <button
+              type="button"
+              onClick={() => setExerciseModalOpen(true)}
+              className="rounded-lg bg-slate-900 px-3 py-2 text-sm text-white hover:bg-slate-800"
+            >
+              New Exercise Request
+            </button>
+            <button
+              type="button"
+              onClick={() => void generateLetter()}
+              disabled={savingLetter}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 disabled:opacity-60"
+            >
+              {savingLetter ? 'Generating...' : 'Generate Letter'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setVestingModalOpen(true)}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-100"
+            >
+              Recalculate Vesting
+            </button>
+            <Link href="/app/equity" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-100">
+              Back to Equity
+            </Link>
+          </>
+        }
+      />
 
       <article className="grid gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:grid-cols-2 xl:grid-cols-4">
         <div>
@@ -510,20 +539,13 @@ export default function GrantDetailPage() {
       <div className="grid gap-5 xl:grid-cols-2">
         <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <h2 className="text-lg font-semibold">Vesting Preview</h2>
-          <form className="mt-3 flex flex-wrap items-end gap-3" onSubmit={refreshVesting}>
-            <div>
-              <label className="mb-1 block text-xs uppercase tracking-wide text-slate-500">As Of Date</label>
-              <input
-                type="date"
-                value={asOf}
-                onChange={(event) => setAsOf(event.target.value)}
-                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-              />
-            </div>
-            <button type="submit" className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800">
-              Recalculate
-            </button>
-          </form>
+          <button
+            type="button"
+            onClick={() => setVestingModalOpen(true)}
+            className="mt-3 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100"
+          >
+            Adjust As Of Date
+          </button>
 
           {detail.vestingPreview ? (
             <div className="mt-4 grid gap-3 md:grid-cols-2">
@@ -550,19 +572,13 @@ export default function GrantDetailPage() {
         <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <h2 className="text-lg font-semibold">Exercise Workflow</h2>
           <p className="mt-1 text-xs text-slate-500">Submit quantity and optional notes, then manage approvals from the request list.</p>
-          <form className="mt-3 grid gap-3 md:grid-cols-2" onSubmit={createExerciseRequest}>
-            <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-              <span>Exercise Quantity</span>
-              <input name="quantity" required placeholder="1000" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900" />
-            </label>
-            <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-              <span>Notes</span>
-              <input name="notes" placeholder="Optional context" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900" />
-            </label>
-            <button type="submit" disabled={savingExercise} className="md:col-span-2 rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:opacity-60">
-              {savingExercise ? 'Submitting...' : 'Create Exercise Request'}
-            </button>
-          </form>
+          <button
+            type="button"
+            onClick={() => setExerciseModalOpen(true)}
+            className="mt-3 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100"
+          >
+            Create Exercise Request
+          </button>
 
           <div className="mt-4 space-y-3">
             {detail.grant.exerciseRequests.length === 0 ? (
@@ -657,6 +673,67 @@ export default function GrantDetailPage() {
 
       {error ? <p className="text-sm text-rose-700">{error}</p> : null}
       {notice ? <p className="text-sm text-emerald-700">{notice}</p> : null}
+
+      <Modal
+        open={exerciseModalOpen}
+        title="Create Exercise Request"
+        description="Submit quantity and optional notes for this grant."
+        onClose={() => setExerciseModalOpen(false)}
+      >
+        <form className="grid gap-3" onSubmit={createExerciseRequest}>
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Exercise Quantity</span>
+            <input name="quantity" required placeholder="1000" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900" />
+          </label>
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Notes</span>
+            <input name="notes" placeholder="Optional context" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900" />
+          </label>
+          <div className="flex gap-2">
+            <button type="submit" disabled={savingExercise} className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:opacity-60">
+              {savingExercise ? 'Submitting...' : 'Create Exercise Request'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setExerciseModalOpen(false)}
+              className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        open={vestingModalOpen}
+        title="Recalculate Vesting"
+        description="Set an as-of date to refresh vested and unvested quantities."
+        onClose={() => setVestingModalOpen(false)}
+      >
+        <form className="grid gap-3" onSubmit={refreshVesting}>
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>As Of Date</span>
+            <input
+              type="date"
+              value={asOf}
+              onChange={(event) => setAsOf(event.target.value)}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            />
+          </label>
+          <div className="flex gap-2">
+            <button type="submit" className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800">
+              Recalculate
+            </button>
+            <button
+              type="button"
+              onClick={() => setVestingModalOpen(false)}
+              className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      </Modal>
     </section>
   );
 }

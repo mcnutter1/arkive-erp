@@ -2,6 +2,8 @@
 
 import { FormEvent, useEffect, useState } from 'react';
 
+import { Modal } from '../_components/modal';
+import { PageHero } from '../_components/page-hero';
 import { readApiError } from '../_utils/read-api-error';
 
 type Valuation = {
@@ -30,6 +32,7 @@ export default function ValuationsReportsPage() {
   const [capTable, setCapTable] = useState<CapTableResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [createOpen, setCreateOpen] = useState(false);
 
   async function loadAll() {
     setLoading(true);
@@ -91,6 +94,7 @@ export default function ValuationsReportsPage() {
       }
 
       event.currentTarget.reset();
+      setCreateOpen(false);
       await loadAll();
     } catch {
       setError('Unable to create valuation.');
@@ -103,53 +107,29 @@ export default function ValuationsReportsPage() {
 
   return (
     <section className="space-y-5">
-      <header className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h1 className="text-xl font-semibold">Valuations & Reports</h1>
-        <p className="mt-2 text-sm text-slate-600">Capture valuations and export audit-facing report outputs.</p>
-      </header>
-
-      <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="text-lg font-semibold">Create Valuation</h2>
-        <form className="mt-4 grid gap-3 md:grid-cols-4" onSubmit={onCreateValuation}>
-          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-            <span>Valuation Type</span>
-            <input
-              name="valuationType"
-              required
-              placeholder="409A"
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
-            />
-          </label>
-          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-            <span>Effective Date</span>
-            <input
-              name="effectiveDate"
-              required
-              type="date"
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
-            />
-          </label>
-          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-            <span>Common FMV</span>
-            <input
-              name="commonFmv"
-              placeholder="Optional"
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
-            />
-          </label>
-          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-            <span>Enterprise Value</span>
-            <input
-              name="enterpriseValue"
-              placeholder="Optional"
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
-            />
-          </label>
-          <button type="submit" className="md:col-span-4 rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800">
-            Save Valuation
-          </button>
-        </form>
-      </article>
+      <PageHero
+        eyebrow="Finance"
+        title="Valuations and Reports"
+        description="Capture valuation events and export board and audit reporting assets."
+        actions={
+          <>
+            <button
+              type="button"
+              onClick={() => setCreateOpen(true)}
+              className="rounded-lg bg-slate-900 px-3 py-2 text-sm text-white hover:bg-slate-800"
+            >
+              New Valuation
+            </button>
+            <button
+              type="button"
+              onClick={() => void loadAll()}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-100"
+            >
+              Refresh
+            </button>
+          </>
+        }
+      />
 
       <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold">Valuation History</h2>
@@ -209,6 +189,62 @@ export default function ValuationsReportsPage() {
       </article>
 
       {error ? <p className="text-sm text-rose-700">{error}</p> : null}
+
+      <Modal
+        open={createOpen}
+        title="Create Valuation"
+        description="Record valuation details for pricing and compliance workflows."
+        onClose={() => setCreateOpen(false)}
+      >
+        <form className="grid gap-3 md:grid-cols-2" onSubmit={onCreateValuation}>
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Valuation Type</span>
+            <input
+              name="valuationType"
+              required
+              placeholder="409A"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+            />
+          </label>
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Effective Date</span>
+            <input
+              name="effectiveDate"
+              required
+              type="date"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+            />
+          </label>
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Common FMV</span>
+            <input
+              name="commonFmv"
+              placeholder="Optional"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+            />
+          </label>
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Enterprise Value</span>
+            <input
+              name="enterpriseValue"
+              placeholder="Optional"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+            />
+          </label>
+          <div className="md:col-span-2 flex gap-2">
+            <button type="submit" className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800">
+              Save Valuation
+            </button>
+            <button
+              type="button"
+              onClick={() => setCreateOpen(false)}
+              className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      </Modal>
     </section>
   );
 }

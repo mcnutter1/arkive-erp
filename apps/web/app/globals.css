@@ -8,5 +8,6 @@
 
 body {
   margin: 0;
-  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
+  font-family: "Avenir Next", "Sofia Pro", "Segoe UI", "Helvetica Neue", sans-serif;
+  background: radial-gradient(circle at 0% 0%, #fff6df 0%, #f8fafc 42%, #eef6ff 100%);
 }

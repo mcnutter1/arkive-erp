@@ -2,6 +2,8 @@
 
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 
+import { Modal } from '../_components/modal';
+import { PageHero } from '../_components/page-hero';
 import { readApiError } from '../_utils/read-api-error';
 
 type DocumentRecord = {
@@ -49,6 +51,8 @@ export default function DocumentsPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
 
   const queryString = useMemo(() => {
     const params = new URLSearchParams({ page: '1', pageSize: '50' });
@@ -134,6 +138,7 @@ export default function DocumentsPage() {
       }
 
       event.currentTarget.reset();
+      setCreateOpen(false);
       await loadDocuments();
     } catch {
       setError('Unable to create document.');
@@ -204,6 +209,7 @@ export default function DocumentsPage() {
       }
 
       event.currentTarget.reset();
+      setUploadOpen(false);
       await loadVersions(selectedDocumentId);
       await loadDocuments();
     } catch {
@@ -234,32 +240,37 @@ export default function DocumentsPage() {
 
   return (
     <section className="space-y-5">
-      <header className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h1 className="text-xl font-semibold">Documents</h1>
-        <p className="mt-2 text-sm text-slate-600">Create records, upload versions, and fetch download URLs.</p>
-      </header>
-
-      <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="text-lg font-semibold">Create Document</h2>
-        <form className="mt-4 grid gap-3 md:grid-cols-3" onSubmit={onCreateDocument}>
-          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-            <span>Title</span>
-            <input name="title" required placeholder="Employee Handbook" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900" />
-          </label>
-          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-            <span>Category</span>
-            <input
-              name="category"
-              required
-              placeholder="policy"
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
-            />
-          </label>
-          <button className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800" type="submit">
-            Create
-          </button>
-        </form>
-      </article>
+      <PageHero
+        eyebrow="Knowledge Ops"
+        title="Documents"
+        description="Manage records, versions, and secure download links through focused modal workflows."
+        actions={
+          <>
+            <button
+              type="button"
+              onClick={() => setCreateOpen(true)}
+              className="rounded-lg bg-slate-900 px-3 py-2 text-sm text-white hover:bg-slate-800"
+            >
+              New Document
+            </button>
+            <button
+              type="button"
+              onClick={() => setUploadOpen(true)}
+              disabled={!selectedDocumentId}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 disabled:opacity-60"
+            >
+              Upload Version
+            </button>
+            <button
+              type="button"
+              onClick={() => void loadDocuments()}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-100"
+            >
+              Refresh
+            </button>
+          </>
+        }
+      />
 
       <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -307,20 +318,14 @@ export default function DocumentsPage() {
       </article>
 
       <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="text-lg font-semibold">Upload New Version</h2>
-        <form className="mt-4 flex flex-col gap-3 md:flex-row md:items-center" onSubmit={onUploadVersion}>
-          <input type="file" name="file" className="text-sm" />
-          <button
-            type="submit"
-            disabled={uploading || !selectedDocumentId}
-            className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {uploading ? 'Uploading...' : 'Upload Version'}
-          </button>
-        </form>
+        <h2 className="text-lg font-semibold">Selected Document</h2>
         {!selectedDocumentId ? (
           <p className="mt-3 text-xs text-amber-700">Select a document in the directory first.</p>
-        ) : null}
+        ) : (
+          <p className="mt-3 text-sm text-slate-600">
+            Ready to upload new versions for the selected document.
+          </p>
+        )}
       </article>
 
       <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -351,6 +356,69 @@ export default function DocumentsPage() {
       </article>
 
       {error ? <p className="text-sm text-rose-700">{error}</p> : null}
+
+      <Modal
+        open={createOpen}
+        title="Create Document"
+        description="Start a document record before uploading versions."
+        onClose={() => setCreateOpen(false)}
+      >
+        <form className="grid gap-3" onSubmit={onCreateDocument}>
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Title</span>
+            <input name="title" required placeholder="Employee Handbook" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900" />
+          </label>
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Category</span>
+            <input
+              name="category"
+              required
+              placeholder="policy"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+            />
+          </label>
+          <div className="flex gap-2">
+            <button className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800" type="submit">
+              Create
+            </button>
+            <button
+              type="button"
+              onClick={() => setCreateOpen(false)}
+              className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        open={uploadOpen}
+        title="Upload Document Version"
+        description="Upload a file for the currently selected document."
+        onClose={() => setUploadOpen(false)}
+      >
+        <form className="grid gap-3" onSubmit={onUploadVersion}>
+          <input type="file" name="file" className="text-sm" />
+          <div className="flex gap-2">
+            <button
+              type="submit"
+              disabled={uploading || !selectedDocumentId}
+              className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {uploading ? 'Uploading...' : 'Upload Version'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setUploadOpen(false)}
+              className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100"
+            >
+              Cancel
+            </button>
+          </div>
+          {!selectedDocumentId ? <p className="text-xs text-amber-700">Select a document in the directory first.</p> : null}
+        </form>
+      </Modal>
     </section>
   );
 }
