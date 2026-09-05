@@ -190,6 +190,14 @@ function isDecimalLike(value: string): boolean {
   return /^\d+(\.\d+)?$/.test(value);
 }
 
+function defaultExercisePriceFromPerShare(perShareValue: string): string {
+  const normalized = normalizeNumericInput(String(perShareValue ?? ''));
+  if (!normalized || !isDecimalLike(normalized)) {
+    return '';
+  }
+  return normalized;
+}
+
 function toDayStartIso(dateInput: string): string | undefined {
   if (!dateInput.trim()) {
     return undefined;
@@ -518,7 +526,12 @@ export default function EquityPage() {
 
   function openCreateGrantModal() {
     setEditingGrantId(null);
-    setGrantForm(defaultGrantForm());
+    const defaults = defaultGrantForm();
+    setGrantForm({
+      ...defaults,
+      exercisePrice:
+        defaults.awardType === 'RSU' ? '' : defaultExercisePriceFromPerShare(capTableView.valuation.perShareValue),
+    });
     setModalView('grant');
     setActiveTab('grants');
     setError(null);
@@ -1167,7 +1180,28 @@ export default function EquityPage() {
       </nav>
 
       {activeTab === 'overview' ? (
-        <div className="grid gap-5 xl:grid-cols-[1.35fr_1fr]">
+        <div className="space-y-5">
+          {dashboard ? (
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <p className="text-xs uppercase tracking-wide text-slate-500">Outstanding Options</p>
+                <p className="mt-2 text-2xl font-semibold text-slate-900">{formatShares(dashboard.cards.outstandingOptions)}</p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <p className="text-xs uppercase tracking-wide text-slate-500">Outstanding RSUs</p>
+                <p className="mt-2 text-2xl font-semibold text-slate-900">{formatShares(dashboard.cards.outstandingRsus)}</p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <p className="text-xs uppercase tracking-wide text-slate-500">Exercised</p>
+                <p className="mt-2 text-2xl font-semibold text-slate-900">{formatShares(dashboard.cards.exercised)}</p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <p className="text-xs uppercase tracking-wide text-slate-500">Forfeited</p>
+                <p className="mt-2 text-2xl font-semibold text-slate-900">{formatShares(dashboard.cards.forfeited)}</p>
+              </div>
+            </div>
+          ) : null}
+
           <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
@@ -1204,7 +1238,7 @@ export default function EquityPage() {
               </div>
             ) : null}
 
-            <div className="mt-4 grid gap-3 md:grid-cols-3">
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                 <p className="text-xs uppercase tracking-wide text-slate-500">Total Available Shares</p>
                 <p className="mt-1 text-lg font-semibold text-slate-900">{formatShares(capTableView.shares.totalAvailableShares)}</p>
@@ -1214,21 +1248,21 @@ export default function EquityPage() {
                 <p className="mt-1 text-lg font-semibold text-slate-900">{formatShares(capTableView.shares.issuedCommonShares)}</p>
               </div>
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <p className="text-xs uppercase tracking-wide text-slate-500">Unassigned Overall</p>
-                <p className="mt-1 text-lg font-semibold text-slate-900">{formatShares(capTableView.shares.unassignedOverallShares)}</p>
+                <p className="text-xs uppercase tracking-wide text-slate-500">Advisor Pool</p>
+                <p className="mt-1 text-lg font-semibold text-slate-900">{formatShares(capTableView.shares.advisorPoolShares)}</p>
+                <p className="text-xs text-slate-500">Unassigned: {formatShares(capTableView.pools.advisor.unassignedShares)}</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs uppercase tracking-wide text-slate-500">Management Pool</p>
+                <p className="mt-1 text-lg font-semibold text-slate-900">{formatShares(capTableView.shares.managementPoolShares)}</p>
+                <p className="text-xs text-slate-500">Unassigned: {formatShares(capTableView.pools.management.unassignedShares)}</p>
               </div>
             </div>
 
-            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <div className="rounded-xl border border-slate-200 p-3">
-                <p className="text-xs uppercase tracking-wide text-slate-500">Advisor Pool</p>
-                <p className="mt-1 text-sm font-semibold text-slate-900">{formatShares(capTableView.shares.advisorPoolShares)}</p>
-                <p className="text-xs text-slate-500">Unassigned: {formatShares(capTableView.pools.advisor.unassignedShares)}</p>
-              </div>
-              <div className="rounded-xl border border-slate-200 p-3">
-                <p className="text-xs uppercase tracking-wide text-slate-500">Management Pool</p>
-                <p className="mt-1 text-sm font-semibold text-slate-900">{formatShares(capTableView.shares.managementPoolShares)}</p>
-                <p className="text-xs text-slate-500">Unassigned: {formatShares(capTableView.pools.management.unassignedShares)}</p>
+                <p className="text-xs uppercase tracking-wide text-slate-500">Unassigned Overall</p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">{formatShares(capTableView.shares.unassignedOverallShares)}</p>
               </div>
               <div className="rounded-xl border border-slate-200 p-3">
                 <p className="text-xs uppercase tracking-wide text-slate-500">EV Per Share</p>
@@ -1238,7 +1272,10 @@ export default function EquityPage() {
               <div className="rounded-xl border border-slate-200 p-3">
                 <p className="text-xs uppercase tracking-wide text-slate-500">Over Allocation</p>
                 <p className="mt-1 text-sm font-semibold text-slate-900">{formatShares(capTableView.shares.overAllocatedShares)}</p>
-                <p className="text-xs text-slate-500">Options + RSU Outstanding: {formatShares(capTableView.shares.equityInstrumentsOutstanding)}</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 p-3">
+                <p className="text-xs uppercase tracking-wide text-slate-500">Options + RSU Outstanding</p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">{formatShares(capTableView.shares.equityInstrumentsOutstanding)}</p>
               </div>
             </div>
 
@@ -1247,25 +1284,25 @@ export default function EquityPage() {
               {capTableView.ownershipTable.length === 0 ? (
                 <p className="mt-2 text-sm text-slate-600">No ownership rows yet. Record common stock issuance and grants from Operations.</p>
               ) : (
-                <div className="mt-2 overflow-x-auto">
+                <div className="mt-2 overflow-x-auto rounded-xl border border-slate-200">
                   <table className="min-w-full text-left text-sm">
-                    <thead className="text-xs uppercase tracking-wide text-slate-500">
+                    <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                       <tr>
-                        <th className="pb-2 pr-4">Holder</th>
-                        <th className="pb-2 pr-4">Type</th>
-                        <th className="pb-2 pr-4">Shares Owned</th>
-                        <th className="pb-2 pr-4">Ownership %</th>
-                        <th className="pb-2 pr-4">Value</th>
+                        <th className="px-4 py-3 pr-4">Holder</th>
+                        <th className="px-4 py-3 pr-4">Type</th>
+                        <th className="px-4 py-3 pr-4">Shares Owned</th>
+                        <th className="px-4 py-3 pr-4">Ownership %</th>
+                        <th className="px-4 py-3 pr-4">Value</th>
                       </tr>
                     </thead>
                     <tbody>
                       {capTableView.ownershipTable.map((row) => (
                         <tr key={`${row.personId}-${row.shareType}`} className="border-t border-slate-200">
-                          <td className="py-2 pr-4 font-medium text-slate-900">{row.personName}</td>
-                          <td className="py-2 pr-4 text-slate-700">{formatShareType(row.shareType)}</td>
-                          <td className="py-2 pr-4 text-slate-700">{formatShares(row.sharesOwned)}</td>
-                          <td className="py-2 pr-4 text-slate-700">{Number(row.ownershipPercent).toFixed(2)}%</td>
-                          <td className="py-2 pr-4 text-slate-700">${formatShares(row.estimatedValue)}</td>
+                          <td className="px-4 py-3 pr-4 font-medium text-slate-900">{row.personName}</td>
+                          <td className="px-4 py-3 pr-4 text-slate-700">{formatShareType(row.shareType)}</td>
+                          <td className="px-4 py-3 pr-4 text-slate-700">{formatShares(row.sharesOwned)}</td>
+                          <td className="px-4 py-3 pr-4 text-slate-700">{Number(row.ownershipPercent).toFixed(2)}%</td>
+                          <td className="px-4 py-3 pr-4 text-slate-700">${formatShares(row.estimatedValue)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -1275,44 +1312,21 @@ export default function EquityPage() {
             </div>
           </article>
 
-          <article className="space-y-4">
-            {dashboard ? (
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <p className="text-xs uppercase tracking-wide text-slate-500">Outstanding Options</p>
-                  <p className="mt-2 text-2xl font-semibold text-slate-900">{formatShares(dashboard.cards.outstandingOptions)}</p>
-                </div>
-                <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <p className="text-xs uppercase tracking-wide text-slate-500">Outstanding RSUs</p>
-                  <p className="mt-2 text-2xl font-semibold text-slate-900">{formatShares(dashboard.cards.outstandingRsus)}</p>
-                </div>
-                <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <p className="text-xs uppercase tracking-wide text-slate-500">Exercised</p>
-                  <p className="mt-2 text-2xl font-semibold text-slate-900">{formatShares(dashboard.cards.exercised)}</p>
-                </div>
-                <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <p className="text-xs uppercase tracking-wide text-slate-500">Forfeited</p>
-                  <p className="mt-2 text-2xl font-semibold text-slate-900">{formatShares(dashboard.cards.forfeited)}</p>
-                </div>
-              </div>
-            ) : null}
-
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <h3 className="text-sm font-semibold text-slate-900">Latest Activity</h3>
-              {!dashboard || dashboard.timeline.length === 0 ? (
-                <p className="mt-2 text-sm text-slate-600">No activity yet.</p>
-              ) : (
-                <ul className="mt-3 space-y-2">
-                  {dashboard.timeline.slice(0, 8).map((event, index) => (
-                    <li key={`${event.date}-${event.type}-${index}`} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                      <p className="text-xs uppercase tracking-wide text-slate-500">{event.type}</p>
-                      <p className="mt-1 text-sm font-medium text-slate-900">{event.title}</p>
-                      <p className="text-xs text-slate-600">{event.subtitle}</p>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
+          <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <h3 className="text-sm font-semibold text-slate-900">Latest Activity</h3>
+            {!dashboard || dashboard.timeline.length === 0 ? (
+              <p className="mt-2 text-sm text-slate-600">No activity yet.</p>
+            ) : (
+              <ul className="mt-3 grid gap-2 md:grid-cols-2">
+                {dashboard.timeline.slice(0, 8).map((event, index) => (
+                  <li key={`${event.date}-${event.type}-${index}`} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                    <p className="text-xs uppercase tracking-wide text-slate-500">{event.type}</p>
+                    <p className="mt-1 text-sm font-medium text-slate-900">{event.title}</p>
+                    <p className="text-xs text-slate-600">{event.subtitle}</p>
+                  </li>
+                ))}
+              </ul>
+            )}
           </article>
         </div>
       ) : null}
@@ -1557,11 +1571,29 @@ export default function EquityPage() {
               <select
                 value={grantForm.awardType}
                 onChange={(event) =>
-                  setGrantForm((prev) => ({
-                    ...prev,
-                    awardType: event.target.value as 'OPTION_ISO' | 'OPTION_NSO' | 'RSU',
-                    exercisePrice: event.target.value === 'RSU' ? '' : prev.exercisePrice,
-                  }))
+                  setGrantForm((prev) => {
+                    const nextAwardType = event.target.value as 'OPTION_ISO' | 'OPTION_NSO' | 'RSU';
+                    if (nextAwardType === 'RSU') {
+                      return {
+                        ...prev,
+                        awardType: nextAwardType,
+                        exercisePrice: '',
+                      };
+                    }
+
+                    if (prev.exercisePrice.trim()) {
+                      return {
+                        ...prev,
+                        awardType: nextAwardType,
+                      };
+                    }
+
+                    return {
+                      ...prev,
+                      awardType: nextAwardType,
+                      exercisePrice: defaultExercisePriceFromPerShare(capTableView.valuation.perShareValue),
+                    };
+                  })
                 }
                 className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
               >
@@ -1619,6 +1651,9 @@ export default function EquityPage() {
                 placeholder="1.50"
                 className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
               />
+              <p className="text-[11px] normal-case tracking-normal text-slate-500">
+                Defaulted from current EV/share ({formatShares(capTableView.valuation.perShareValue)}).
+              </p>
             </label>
           ) : null}
 
