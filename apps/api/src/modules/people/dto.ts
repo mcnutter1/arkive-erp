@@ -1,5 +1,16 @@
 import { Type } from 'class-transformer';
-import { IsArray, IsDateString, IsEmail, IsEnum, IsOptional, IsString, IsUUID, MaxLength, ValidateNested } from 'class-validator';
+import {
+  IsArray,
+  IsBoolean,
+  IsDateString,
+  IsEmail,
+  IsEnum,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MaxLength,
+  ValidateNested,
+} from 'class-validator';
 
 const EngagementKindValues = {
   EMPLOYEE: 'EMPLOYEE',
@@ -102,6 +113,28 @@ class PersonGovernmentIdsDto {
   taxIdLast4?: string;
 }
 
+class PersonWorkInfoDto {
+  @IsOptional()
+  @IsString()
+  jobTitle?: string;
+
+  @IsOptional()
+  @IsString()
+  department?: string;
+
+  @IsOptional()
+  @IsString()
+  managerName?: string;
+
+  @IsOptional()
+  @IsString()
+  workLocation?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  companySignatory?: boolean;
+}
+
 class PersonHrisProfileDto {
   @IsOptional()
   @IsString()
@@ -163,6 +196,11 @@ class PersonHrisProfileDto {
   @ValidateNested()
   @Type(() => PersonGovernmentIdsDto)
   governmentIds?: PersonGovernmentIdsDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => PersonWorkInfoDto)
+  workInfo?: PersonWorkInfoDto;
 
   @IsOptional()
   @IsArray()

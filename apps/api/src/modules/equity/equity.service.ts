@@ -7,6 +7,7 @@ import { PDFDocument, PDFFont, PDFPage, StandardFonts, rgb } from 'pdf-lib';
 import { AuthenticatedUser } from '../auth/auth.types.js';
 import { PrismaService } from '../common/prisma.service.js';
 import { StorageService } from '../documents/storage.service.js';
+import { createSignerLinkToken } from '../signatures/signer-link-token.js';
 import { VestingService } from '../vesting/vesting.service.js';
 import {
   CreateGrantESignPackageDto,
@@ -44,6 +45,25 @@ type GrantLetterPayload = {
     signingOrder: number;
   }>;
   eSignConfigured: boolean;
+};
+
+type GrantLetterAcceptanceLayout = {
+  company: {
+    name: string;
+    title: string;
+    companyName: string;
+  };
+  recipient: {
+    name: string;
+    title?: string;
+  };
+  footer: string;
+};
+
+type PersonWorkInfo = {
+  jobTitle?: string;
+  department?: string;
+  companySignatory: boolean;
 };
 
 @Injectable()
@@ -92,6 +112,17 @@ export class EquityService {
     return value
       .map((entry) => this.readString(entry))
       .filter((entry): entry is string => typeof entry === 'string');
+  }
+
+  private readWorkInfoFromProfile(hrisProfile: Prisma.JsonValue | null | undefined): PersonWorkInfo {
+    const profile = this.parseSettingObject(hrisProfile);
+    const workInfo = this.parseSettingObject(profile.workInfo);
+
+    return {
+      jobTitle: this.readString(workInfo.jobTitle) ?? this.readString(profile.jobTitle),
+      department: this.readString(workInfo.department) ?? this.readString(profile.department),
+      companySignatory: this.toBoolean(workInfo.companySignatory ?? profile.companySignatory),
+    };
   }
 
   private readTransactionInstrumentType(
@@ -797,14 +828,17 @@ export class EquityService {
     return segments;
   }
 
-  private async renderGrantLetterPdf(lines: string[]): Promise<Uint8Array> {
+  private async renderGrantLetterPdf(
+    lines: string[],
+    acceptanceLayout: GrantLetterAcceptanceLayout,
+  ): Promise<Uint8Array> {
     const pdf = await PDFDocument.create();
     const bodyFont = await pdf.embedFont(StandardFonts.Helvetica);
     const headingFont = await pdf.embedFont(StandardFonts.HelveticaBold);
 
     const pageWidth = 612;
     const pageHeight = 792;
-    const margin = 54;
+    const margin = 42;
     const maxLineWidth = pageWidth - margin * 2;
 
     let page: PDFPage = pdf.addPage([pageWidth, pageHeight]);
@@ -825,50 +859,139 @@ export class EquityService {
           font,
           color: rgb(0.12, 0.15, 0.2),
         });
-        cursorY -= fontSize * 1.45;
+        cursorY -= fontSize * 1.3;
       }
     };
 
     for (const sourceLine of lines) {
       const line = sourceLine.trimEnd();
       if (!line.trim()) {
-        cursorY -= 8;
+        cursorY -= 6;
         continue;
       }
 
       let font = bodyFont;
-      let fontSize = 11;
+      let fontSize = 9;
       let text = line;
 
       if (line.startsWith('# ')) {
         font = headingFont;
-        fontSize = 18;
+        fontSize = 15;
         text = line.slice(2).trim();
       } else if (line.startsWith('## ')) {
         font = headingFont;
-        fontSize = 14;
+        fontSize = 12;
         text = line.slice(3).trim();
       } else if (line.startsWith('### ')) {
         font = headingFont;
-        fontSize = 12;
+        fontSize = 10;
         text = line.slice(4).trim();
       } else if (line.startsWith('_') && line.endsWith('_')) {
-        fontSize = 10;
+        fontSize = 8;
         text = line.slice(1, -1).trim();
       }
 
       drawWrappedLine(text, font, fontSize);
-      cursorY -= line.startsWith('# ') ? 6 : 2;
+      cursorY -= line.startsWith('# ') ? 5 : 1;
     }
+
+    const acceptanceBlockHeight = 136;
+    if (cursorY < margin + acceptanceBlockHeight) {
+      page = pdf.addPage([pageWidth, pageHeight]);
+      cursorY = pageHeight - margin;
+    }
+
+    const columnGap = 16;
+    const columnWidth = (maxLineWidth - columnGap) / 2;
+    const leftX = margin;
+    const rightX = margin + columnWidth + columnGap;
+    const panelTop = cursorY - 8;
+    const panelHeight = 96;
+
+    page.drawRectangle({
+      x: leftX,
+      y: panelTop - panelHeight,
+      width: columnWidth,
+      height: panelHeight,
+      borderWidth: 1,
+      borderColor: rgb(0.82, 0.85, 0.9),
+    });
+
+    page.drawRectangle({
+      x: rightX,
+      y: panelTop - panelHeight,
+      width: columnWidth,
+      height: panelHeight,
+      borderWidth: 1,
+      borderColor: rgb(0.82, 0.85, 0.9),
+    });
+
+    const drawAcceptancePanel = (x: number, heading: string, values: string[]) => {
+      let y = panelTop - 14;
+      page.drawText(heading, {
+        x: x + 10,
+        y,
+        size: 10,
+        font: headingFont,
+        color: rgb(0.1, 0.13, 0.18),
+      });
+      y -= 18;
+
+      page.drawText('Signature: _______________________', {
+        x: x + 10,
+        y,
+        size: 8,
+        font: bodyFont,
+        color: rgb(0.35, 0.4, 0.47),
+      });
+      y -= 14;
+
+      for (const value of values) {
+        const trimmed = value.trim();
+        if (!trimmed) {
+          continue;
+        }
+        page.drawText(trimmed, {
+          x: x + 10,
+          y,
+          size: 9,
+          font: bodyFont,
+          color: rgb(0.12, 0.15, 0.2),
+        });
+        y -= 12;
+      }
+    };
+
+    const companyTitleLine = acceptanceLayout.company.title;
+    const recipientTitleLine = acceptanceLayout.recipient.title;
+
+    drawAcceptancePanel(leftX, 'Company Acceptance', [
+      acceptanceLayout.company.name,
+      companyTitleLine,
+      acceptanceLayout.company.companyName,
+    ]);
+    drawAcceptancePanel(rightX, 'Recipient Acceptance', [
+      acceptanceLayout.recipient.name,
+      recipientTitleLine ?? '',
+    ]);
+
+    const footerY = panelTop - panelHeight - 12;
+    page.drawText(acceptanceLayout.footer, {
+      x: margin,
+      y: footerY,
+      size: 8,
+      font: bodyFont,
+      color: rgb(0.35, 0.4, 0.47),
+    });
 
     return pdf.save();
   }
 
-  private buildPortalSigningUrl(participantId: string): string {
+  private buildPortalSigningUrl(participantId: string, token: string): string {
     const configured = this.asNonEmptyString(process.env.APP_BASE_URL);
     const corsOrigin = this.asNonEmptyString(process.env.API_CORS_ORIGIN?.split(',')[0]);
     const baseUrl = (configured ?? corsOrigin ?? 'http://localhost:3000').replace(/\/+$/, '');
-    return `${baseUrl}/app/portal?participantId=${encodeURIComponent(participantId)}`;
+    return `${baseUrl}/sign/${encodeURIComponent(participantId)}?token=${encodeURIComponent(token)}`;
   }
 
   private async sendGrantPacketInviteEmails(actor: AuthenticatedUser, signatureRequestId: string, title: string) {
@@ -878,6 +1001,11 @@ export class EquityService {
         signatureRequestId,
       },
       include: {
+        signatureRequest: {
+          select: {
+            expiresAt: true,
+          },
+        },
         person: {
           select: {
             id: true,
@@ -924,7 +1052,14 @@ export class EquityService {
     const results = participants.map((participant) => ({
       participantId: participant.id,
       personId: participant.personId,
-      url: this.buildPortalSigningUrl(participant.id),
+      url: this.buildPortalSigningUrl(
+        participant.id,
+        createSignerLinkToken({
+          participantId: participant.id,
+          organizationId: participant.organizationId,
+          expiresAt: participant.signatureRequest.expiresAt ?? undefined,
+        }),
+      ),
       email:
         this.asNonEmptyString(participant.person.primaryEmail) ??
         this.asNonEmptyString(participant.person.businessEmail) ??
@@ -986,10 +1121,10 @@ export class EquityService {
         '',
         `You have been requested to sign: ${title}`,
         '',
-        'Open the secure signing packet using this link:',
+        'Open the secure signing packet using this link (no login required):',
         invite.url,
         '',
-        'If the link does not open directly, sign in and navigate to Portal.',
+        'This is a direct signer link tied to this recipient and request.',
       ].join('\n');
 
       try {
@@ -1038,7 +1173,11 @@ export class EquityService {
     };
   }
 
-  async generateGrantLetter(actor: AuthenticatedUser, grantId: string): Promise<GrantLetterPayload> {
+  async generateGrantLetter(
+    actor: AuthenticatedUser,
+    grantId: string,
+    requestedSignatoryPersonId?: string,
+  ): Promise<GrantLetterPayload> {
     const detail = await this.getGrantDetail(actor, grantId);
     const grant = detail.grant;
 
@@ -1067,12 +1206,66 @@ export class EquityService {
     const legalEntityName = String(
       companyProfile.legalEntityName ?? grantLetters.legalEntityName ?? companyName,
     );
-    const signatoryName = String(grantLetters.signatoryName ?? 'Authorized Signatory');
-    const signatoryTitle = String(grantLetters.signatoryTitle ?? 'Company Officer');
-    const signatoryPersonId =
-      typeof grantLetters.signatoryPersonId === 'string' ? grantLetters.signatoryPersonId : undefined;
+    const configuredSignatoryPersonId = this.readString(grantLetters.signatoryPersonId);
+    const selectedSignatoryPersonId = this.readString(requestedSignatoryPersonId) ?? configuredSignatoryPersonId;
+
+    const people = await this.prisma.person.findMany({
+      where: {
+        organizationId: actor.organizationId,
+        id: {
+          in: [...new Set([grant.personId, ...(selectedSignatoryPersonId ? [selectedSignatoryPersonId] : [])])],
+        },
+      },
+      select: {
+        id: true,
+        legalFirstName: true,
+        legalLastName: true,
+        primaryEmail: true,
+        businessEmail: true,
+        hrisProfile: true,
+      },
+    });
+    const peopleById = new Map(people.map((person) => [person.id, person]));
+    const recipientPerson = peopleById.get(grant.personId);
+
+    let signatoryName = String(grantLetters.signatoryName ?? 'Authorized Signatory');
+    let signatoryTitle = String(grantLetters.signatoryTitle ?? 'Company Officer');
+    let signatoryPersonId: string | undefined;
+
+    if (selectedSignatoryPersonId) {
+      if (selectedSignatoryPersonId === grant.personId) {
+        if (requestedSignatoryPersonId) {
+          throw new BadRequestException('Company signatory must be different from the grant recipient');
+        }
+      } else {
+        const signatoryPerson = peopleById.get(selectedSignatoryPersonId);
+        if (!signatoryPerson) {
+          throw new NotFoundException('Selected company signatory was not found');
+        }
+
+        const signatoryWorkInfo = this.readWorkInfoFromProfile(signatoryPerson.hrisProfile);
+        if (requestedSignatoryPersonId && !signatoryWorkInfo.companySignatory) {
+          throw new BadRequestException(
+            'Selected person is not marked as Company Signatory in employee profile',
+          );
+        }
+
+        signatoryName = `${signatoryPerson.legalFirstName} ${signatoryPerson.legalLastName}`.trim();
+        const signatoryTitleParts = [signatoryWorkInfo.jobTitle, signatoryWorkInfo.department].filter(
+          (value): value is string => Boolean(value),
+        );
+        if (signatoryTitleParts.length > 0) {
+          signatoryTitle = signatoryTitleParts.join(' - ');
+        }
+        signatoryPersonId = selectedSignatoryPersonId;
+      }
+    }
 
     const recipientName = `${grant.person.legalFirstName} ${grant.person.legalLastName}`;
+    const recipientWorkInfo = this.readWorkInfoFromProfile(recipientPerson?.hrisProfile);
+    const recipientTitleLine = [recipientWorkInfo.jobTitle, recipientWorkInfo.department]
+      .filter((value): value is string => Boolean(value))
+      .join(' - ');
     const grantDate = grant.grantDate ? new Date(grant.grantDate).toISOString().slice(0, 10) : '';
     const vestingSchedule = grant.vestingSchedules[0];
     const exercisePriceLine = grant.exercisePrice
@@ -1094,7 +1287,7 @@ export class EquityService {
     const title = `${grant.awardType} Grant Letter - ${recipientName}`;
     const fileName = `${recipientName.replace(/\s+/g, '-').toLowerCase()}-${grant.awardType.toLowerCase()}-grant-letter.pdf`;
 
-    const markdownLines = [
+    const bodyLines = [
       `# ${legalEntityName}`,
       '',
       '## Notice of Equity Grant',
@@ -1103,7 +1296,7 @@ export class EquityService {
       '',
       'Recipient:',
       `${recipientName}`,
-      `${grant.person.primaryEmail ?? 'N/A'}`,
+      `${recipientPerson?.primaryEmail ?? recipientPerson?.businessEmail ?? grant.person.primaryEmail ?? 'N/A'}`,
       '',
       'You are hereby granted the following equity award (the "Award") by the Company, subject to the terms of the governing equity incentive plan and the applicable award agreement.',
       '',
@@ -1132,6 +1325,14 @@ export class EquityService {
       '',
       'By signing this notice, you confirm that you have reviewed and accept the Award terms and consent to electronic records and signatures for this Award package.',
       '',
+      '### Acceptance',
+      '',
+      'Company and recipient acceptance signature blocks are included below.',
+    ];
+
+    const previewLines = [
+      ...bodyLines,
+      '',
       '### Company Acceptance',
       '',
       `${signatoryName}`,
@@ -1141,12 +1342,24 @@ export class EquityService {
       '### Recipient Acceptance',
       '',
       `${recipientName}`,
+      ...(recipientTitleLine ? [recipientTitleLine] : []),
       '',
       '_Generated by Arkive Equity Workspace - native e-sign ready_',
     ];
 
-    const previewText = markdownLines.join('\n');
-    const pdfBytes = await this.renderGrantLetterPdf(markdownLines);
+    const previewText = previewLines.join('\n');
+    const pdfBytes = await this.renderGrantLetterPdf(bodyLines, {
+      company: {
+        name: signatoryName,
+        title: signatoryTitle,
+        companyName,
+      },
+      recipient: {
+        name: recipientName,
+        title: recipientTitleLine || undefined,
+      },
+      footer: 'Generated by Arkive Equity Workspace - native e-sign ready',
+    });
 
     return {
       title,
@@ -1183,12 +1396,33 @@ export class EquityService {
     const detail = await this.getGrantDetail(actor, grantId);
     const grant = detail.grant;
 
-    await this.ensurePersonInOrg(actor.organizationId, dto.signatoryPersonId);
+    const signatoryPerson = await this.prisma.person.findFirst({
+      where: {
+        id: dto.signatoryPersonId,
+        organizationId: actor.organizationId,
+      },
+      select: {
+        id: true,
+        hrisProfile: true,
+      },
+    });
+
+    if (!signatoryPerson) {
+      throw new NotFoundException('Selected company signatory was not found');
+    }
+
+    const signatoryWorkInfo = this.readWorkInfoFromProfile(signatoryPerson.hrisProfile);
+    if (!signatoryWorkInfo.companySignatory) {
+      throw new BadRequestException(
+        'Selected person is not marked as Company Signatory in employee profile',
+      );
+    }
+
     if (dto.signatoryPersonId === grant.personId) {
       throw new BadRequestException('Company signatory must be different from the grant recipient');
     }
 
-    const letter = await this.generateGrantLetter(actor, grantId);
+    const letter = await this.generateGrantLetter(actor, grantId, dto.signatoryPersonId);
     const letterMimeType = letter.mimeType || 'application/pdf';
     const letterBytes = Buffer.from(letter.contentBase64, 'base64');
     const expiresAt = this.parseDateInput(dto.expiresAt, 'expiresAt');

@@ -35,6 +35,14 @@ type GovernmentIds = {
   taxIdLast4?: string;
 };
 
+type WorkInfo = {
+  jobTitle?: string;
+  department?: string;
+  managerName?: string;
+  workLocation?: string;
+  companySignatory?: boolean;
+};
+
 type PersonHrisProfile = {
   legalMiddleName?: string;
   displayName?: string;
@@ -50,6 +58,7 @@ type PersonHrisProfile = {
   emergencyContact?: EmergencyContact;
   compensation?: Compensation;
   governmentIds?: GovernmentIds;
+  workInfo?: WorkInfo;
   skills?: string[];
   notes?: string;
 };
@@ -106,6 +115,10 @@ function readArray(record: Record<string, unknown>, key: string): string[] {
     return [];
   }
   return value.filter((item): item is string => typeof item === 'string');
+}
+
+function readBoolean(record: Record<string, unknown>, key: string): boolean {
+  return record[key] === true;
 }
 
 function compactObject(input: Record<string, unknown>): Record<string, unknown> | undefined {
@@ -213,6 +226,13 @@ export default function PeoplePage() {
       emergencyContact: asObject(raw.emergencyContact),
       compensation: asObject(raw.compensation),
       governmentIds: asObject(raw.governmentIds),
+      workInfo: {
+        jobTitle: readString(asObject(raw.workInfo), 'jobTitle'),
+        department: readString(asObject(raw.workInfo), 'department'),
+        managerName: readString(asObject(raw.workInfo), 'managerName'),
+        workLocation: readString(asObject(raw.workInfo), 'workLocation'),
+        companySignatory: readBoolean(asObject(raw.workInfo), 'companySignatory'),
+      },
       skills: readArray(raw, 'skills'),
       notes: readString(raw, 'notes'),
     };
@@ -359,6 +379,14 @@ export default function PeoplePage() {
       taxIdLast4: read('govTaxIdLast4') || undefined,
     });
 
+    const workInfo = compactObject({
+      jobTitle: read('workJobTitle') || undefined,
+      department: read('workDepartment') || undefined,
+      managerName: read('workManagerName') || undefined,
+      workLocation: read('workLocation') || undefined,
+      companySignatory: form.get('workCompanySignatory') === 'on',
+    });
+
     const hrisProfile = compactObject({
       legalMiddleName: read('legalMiddleName') || undefined,
       displayName: read('displayName') || undefined,
@@ -374,6 +402,7 @@ export default function PeoplePage() {
       emergencyContact,
       compensation,
       governmentIds,
+      workInfo,
       skills,
       notes: read('notes') || undefined,
     });
@@ -928,6 +957,34 @@ export default function PeoplePage() {
                 <input name="govEmployeeId" defaultValue={selectedProfile.governmentIds?.employeeId ?? ''} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900" />
               </label>
             </div>
+
+            <div className="grid gap-3 md:grid-cols-4">
+              <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+                <span>Job Title</span>
+                <input name="workJobTitle" defaultValue={selectedProfile.workInfo?.jobTitle ?? ''} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+              </label>
+              <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+                <span>Department</span>
+                <input name="workDepartment" defaultValue={selectedProfile.workInfo?.department ?? ''} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+              </label>
+              <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+                <span>Manager Name</span>
+                <input name="workManagerName" defaultValue={selectedProfile.workInfo?.managerName ?? ''} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+              </label>
+              <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+                <span>Work Location</span>
+                <input name="workLocation" defaultValue={selectedProfile.workInfo?.workLocation ?? ''} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+              </label>
+            </div>
+
+            <label className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+              <input
+                name="workCompanySignatory"
+                type="checkbox"
+                defaultChecked={Boolean(selectedProfile.workInfo?.companySignatory)}
+              />
+              <span>Company Signatory (eligible for company acceptance signatures)</span>
+            </label>
 
             <div className="grid gap-3 md:grid-cols-4">
               <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">

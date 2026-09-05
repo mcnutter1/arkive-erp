@@ -105,10 +105,39 @@ type PeopleResponse = {
     legalFirstName: string;
     legalLastName: string;
     primaryEmail: string | null;
+    hrisProfile: unknown;
   }>;
 };
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? '/api/v1';
+
+function asObject(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+}
+
+function readString(record: Record<string, unknown>, key: string): string {
+  const value = record[key];
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function readBoolean(record: Record<string, unknown>, key: string): boolean {
+  return record[key] === true;
+}
+
+function readWorkInfo(hrisProfile: unknown): {
+  jobTitle: string;
+  department: string;
+  companySignatory: boolean;
+} {
+  const profile = asObject(hrisProfile);
+  const work = asObject(profile.workInfo);
+  return {
+    jobTitle: readString(work, 'jobTitle'),
+    department: readString(work, 'department'),
+    companySignatory:
+      readBoolean(work, 'companySignatory') || readBoolean(profile, 'companySignatory'),
+  };
+}
 
 function formatShares(value: string | null | undefined): string {
   if (!value) {
@@ -154,7 +183,13 @@ export default function GrantDetailPage() {
   }, [detail]);
 
   const signatoryOptions = useMemo(
-    () => people.filter((person) => person.id !== detail?.grant.personId),
+    () =>
+      people.filter((person) => {
+        if (person.id === detail?.grant.personId) {
+          return false;
+        }
+        return readWorkInfo(person.hrisProfile).companySignatory;
+      }),
     [people, detail?.grant.personId],
   );
 
@@ -198,6 +233,16 @@ export default function GrantDetailPage() {
   useEffect(() => {
     void loadPageData();
   }, [grantId]);
+
+  useEffect(() => {
+    if (!signatoryPersonId) {
+      return;
+    }
+
+    if (!signatoryOptions.some((person) => person.id === signatoryPersonId)) {
+      setSignatoryPersonId('');
+    }
+  }, [signatoryPersonId, signatoryOptions]);
 
   async function refreshVesting(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -354,9 +399,17 @@ export default function GrantDetailPage() {
     setNotice(null);
 
     try {
-      const response = await fetch(`${apiBaseUrl}/equity/grants/${detail.grant.id}/letter`, {
+      const params = new URLSearchParams();
+      if (signatoryPersonId) {
+        params.set('signatoryPersonId', signatoryPersonId);
+      }
+
+      const response = await fetch(
+        `${apiBaseUrl}/equity/grants/${detail.grant.id}/letter${params.toString() ? `?${params.toString()}` : ''}`,
+        {
         credentials: 'include',
-      });
+        },
+      );
 
       if (!response.ok) {
         setError(await readApiError(response, 'Unable to generate grant letter.'));
@@ -367,9 +420,20 @@ export default function GrantDetailPage() {
       setLetter(payload);
 
       const signatory = payload.defaultParticipants.find((p) => p.role === 'Company Signatory');
-      if (signatory) {
-        setSignatoryPersonId(signatory.personId);
-      }
+      setSignatoryPersonId((previous) => {
+        if (previous) {
+          return previous;
+        }
+
+        const suggestedSignatoryId = signatory?.personId;
+        if (!suggestedSignatoryId) {
+          return '';
+        }
+
+        return signatoryOptions.some((person) => person.id === suggestedSignatoryId)
+          ? suggestedSignatoryId
+          : '';
+      });
 
       setNotice('Grant letter generated.');
     } catch {
@@ -636,9 +700,17 @@ export default function GrantDetailPage() {
                   {signatoryOptions.map((person) => (
                     <option key={person.id} value={person.id}>
                       {person.legalFirstName} {person.legalLastName}
+                      {readWorkInfo(person.hrisProfile).jobTitle
+                        ? ` - ${readWorkInfo(person.hrisProfile).jobTitle}`
+                        : ''}
                     </option>
                   ))}
                 </select>
+                {signatoryOptions.length === 0 ? (
+                  <p className="mt-1 text-xs text-amber-700">
+                    No people are flagged as Company Signatory. Update the employee profile work info first.
+                  </p>
+                ) : null}
               </div>
               <div className="flex items-end">
                 <button type="button" onClick={() => void createESignPackage()} disabled={savingESign || !signatoryPersonId} className="w-full rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:opacity-60">

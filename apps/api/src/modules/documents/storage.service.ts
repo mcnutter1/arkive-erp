@@ -103,6 +103,39 @@ export class StorageService {
     return getSignedUrl(this.client, command, { expiresIn: 120 });
   }
 
+  async downloadObject(key: string): Promise<Uint8Array> {
+    await this.ensureBucketReady();
+
+    const result = await this.client.send(
+      new GetObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+      }),
+    );
+
+    const body = result.Body as
+      | {
+          transformToByteArray?: () => Promise<Uint8Array>;
+        }
+      | AsyncIterable<Uint8Array | Buffer | string>
+      | undefined;
+
+    if (!body) {
+      throw new Error(`No object body returned for key "${key}"`);
+    }
+
+    if ('transformToByteArray' in body && typeof body.transformToByteArray === 'function') {
+      return body.transformToByteArray();
+    }
+
+    const chunks: Buffer[] = [];
+    for await (const chunk of body as AsyncIterable<Uint8Array | Buffer | string>) {
+      chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : Buffer.from(chunk));
+    }
+
+    return Buffer.concat(chunks);
+  }
+
   async uploadObject(
     orgId: string,
     mimeType: string,

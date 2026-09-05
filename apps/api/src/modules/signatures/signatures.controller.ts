@@ -1,8 +1,9 @@
-import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 
 import { AuthGuard } from '../auth/auth.guard.js';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import { AuthenticatedUser } from '../auth/auth.types.js';
+import { Public } from '../auth/public.decorator.js';
 import { RequirePermissions } from '../authorization/permissions.decorator.js';
 import { PermissionsGuard } from '../authorization/permissions.guard.js';
 import {
@@ -103,6 +104,16 @@ export class SignaturesController {
     return this.signaturesService.getMyParticipantPacket(actor, participantId);
   }
 
+  @Get('public/participants/:participantId')
+  @Public()
+  publicPacket(
+    @Param('participantId') participantId: string,
+    @Query('token') token: string | undefined,
+    @Req() req: SignatureRequestLike,
+  ) {
+    return this.signaturesService.getPublicParticipantPacket(participantId, token, captureContext(req));
+  }
+
   @Post('participants/:participantId/sign')
   @RequirePermissions('documents.sign.self')
   signMine(
@@ -114,6 +125,17 @@ export class SignaturesController {
     return this.signaturesService.completeMySignature(actor, participantId, dto, captureContext(req));
   }
 
+  @Post('public/participants/:participantId/sign')
+  @Public()
+  signPublic(
+    @Param('participantId') participantId: string,
+    @Query('token') token: string | undefined,
+    @Body() dto: CompleteNativeSignatureDto,
+    @Req() req: SignatureRequestLike,
+  ) {
+    return this.signaturesService.completePublicSignature(participantId, token, dto, captureContext(req));
+  }
+
   @Post('participants/:participantId/decline')
   @RequirePermissions('documents.sign.self')
   declineMine(
@@ -123,5 +145,16 @@ export class SignaturesController {
     @Req() req: SignatureRequestLike,
   ) {
     return this.signaturesService.declineMySignature(actor, participantId, dto, captureContext(req));
+  }
+
+  @Post('public/participants/:participantId/decline')
+  @Public()
+  declinePublic(
+    @Param('participantId') participantId: string,
+    @Query('token') token: string | undefined,
+    @Body() dto: DeclineNativeSignatureDto,
+    @Req() req: SignatureRequestLike,
+  ) {
+    return this.signaturesService.declinePublicSignature(participantId, token, dto, captureContext(req));
   }
 }

@@ -138,8 +138,12 @@ export class EquityController {
 
   @Get('grants/:grantId/letter')
   @RequirePermissions('equity.read')
-  grantLetter(@CurrentUser() actor: AuthenticatedUser, @Param('grantId') grantId: string) {
-    return this.equityService.generateGrantLetter(actor, grantId);
+  grantLetter(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('grantId') grantId: string,
+    @Query('signatoryPersonId') signatoryPersonId: string | undefined,
+  ) {
+    return this.equityService.generateGrantLetter(actor, grantId, signatoryPersonId);
   }
 
   @Post('grants/:grantId/esign-package')
