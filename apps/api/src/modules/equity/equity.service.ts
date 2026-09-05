@@ -14,6 +14,7 @@ import {
   CreateEquityTransactionDto,
   CreateGrantAwardDto,
   UpdateCapTableBaseDto,
+  UpdateCapTablePoolsDto,
   UpdateEquityPlanDto,
   UpdateGrantAwardDto,
 } from './dto.js';
@@ -22,6 +23,13 @@ export type GrantESignCaptureContext = {
   ipAddress?: string;
   userAgent?: string;
   localeHint?: string;
+};
+
+type CapTablePoolConfig = {
+  advisorPoolShares: Decimal;
+  managementPoolShares: Decimal;
+  advisorPlanIds: Set<string>;
+  managementPlanIds: Set<string>;
 };
 
 type GrantLetterPayload = {
@@ -65,6 +73,81 @@ export class EquityService {
       return value !== 0;
     }
     return false;
+  }
+
+  private readString(value: unknown): string | undefined {
+    if (typeof value !== 'string') {
+      return undefined;
+    }
+
+    const normalized = value.trim();
+    return normalized || undefined;
+  }
+
+  private toStringArray(value: unknown): string[] {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+
+    return value
+      .map((entry) => this.readString(entry))
+      .filter((entry): entry is string => typeof entry === 'string');
+  }
+
+  private readTransactionInstrumentType(
+    metadata: Prisma.JsonValue | null | undefined,
+    fallbackType: string,
+  ): string {
+    if (metadata && typeof metadata === 'object' && !Array.isArray(metadata)) {
+      const candidate = this.readString((metadata as Record<string, unknown>).instrumentType);
+      if (candidate) {
+        return candidate;
+      }
+    }
+
+    if (fallbackType === 'EXERCISE') {
+      return 'COMMON_EXERCISED';
+    }
+
+    if (fallbackType === 'CONVERT') {
+      return 'COMMON_SAFE';
+    }
+
+    if (fallbackType === 'ISSUE') {
+      return 'COMMON_FOUNDER';
+    }
+
+    return 'COMMON_OTHER';
+  }
+
+  private async getCapTablePoolConfig(organizationId: string): Promise<CapTablePoolConfig> {
+    const setting = await this.prisma.systemSetting.findFirst({
+      where: {
+        organizationId,
+        section: 'equity',
+        key: 'capTablePools',
+      },
+      select: {
+        value: true,
+      },
+    });
+
+    const payload = this.parseSettingObject(setting?.value);
+    const advisorPoolShares = this.parseDecimalInput(payload.advisorPoolShares ?? '0', 'advisor pool shares', {
+      allowZero: true,
+    });
+    const managementPoolShares = this.parseDecimalInput(
+      payload.managementPoolShares ?? '0',
+      'management pool shares',
+      { allowZero: true },
+    );
+
+    return {
+      advisorPoolShares,
+      managementPoolShares,
+      advisorPlanIds: new Set(this.toStringArray(payload.advisorPlanIds)),
+      managementPlanIds: new Set(this.toStringArray(payload.managementPlanIds)),
+    };
   }
 
   private normalizeLocaleTag(input?: string): string | undefined {
@@ -1118,8 +1201,9 @@ export class EquityService {
         letterBytes,
         'grant-letters',
       );
-    } catch {
-      throw new BadRequestException('Unable to store grant letter in document storage');
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : 'unknown storage error';
+      throw new BadRequestException(`Unable to store grant letter in document storage: ${reason}`);
     }
 
     const requestTitle = `${letter.title} - Signature Packet`;
@@ -1238,55 +1322,45 @@ export class EquityService {
 
   async getCapTable(actor: AuthenticatedUser) {
     const [
-      baseOutstandingShares,
+      totalAvailableShares,
+      poolConfig,
       securityClassTotals,
-      planReserveTotals,
-      grantTotals,
-      optionGrantTotals,
-      rsuGrantTotals,
-      completedExerciseTotals,
-      forfeitedOptionTotals,
-      forfeitedRsuTotals,
-      issuedTo,
-      issuedFrom,
+      latestValuation,
+      grants,
+      completedExercisesByGrant,
+      terminations,
+      txns,
     ] = await Promise.all([
       this.getConfiguredBaseOutstandingShares(actor.organizationId),
+      this.getCapTablePoolConfig(actor.organizationId),
       this.prisma.securityClass.aggregate({
         where: { organizationId: actor.organizationId },
         _sum: { authorizedShares: true },
       }),
-      this.prisma.equityPlan.aggregate({
+      this.prisma.valuation.findFirst({
+        where: {
+          organizationId: actor.organizationId,
+          enterpriseValue: { not: null },
+        },
+        orderBy: [{ effectiveDate: 'desc' }, { createdAt: 'desc' }],
+        select: {
+          id: true,
+          effectiveDate: true,
+          enterpriseValue: true,
+        },
+      }),
+      this.prisma.grantAward.findMany({
         where: { organizationId: actor.organizationId },
-        _sum: { reservedShares: true },
-      }),
-      this.prisma.grantAward.aggregate({
-        where: {
-          organizationId: actor.organizationId,
-          planId: { not: null },
-        },
-        _sum: { quantity: true },
-      }),
-      this.prisma.grantAward.aggregate({
-        where: {
-          organizationId: actor.organizationId,
-          awardType: {
-            in: ['OPTION_ISO', 'OPTION_NSO'],
-          },
-        },
-        _sum: {
+        select: {
+          id: true,
+          personId: true,
+          planId: true,
+          awardType: true,
           quantity: true,
         },
       }),
-      this.prisma.grantAward.aggregate({
-        where: {
-          organizationId: actor.organizationId,
-          awardType: 'RSU',
-        },
-        _sum: {
-          quantity: true,
-        },
-      }),
-      this.prisma.exerciseRequest.aggregate({
+      this.prisma.exerciseRequest.groupBy({
+        by: ['grantId'],
         where: {
           organizationId: actor.organizationId,
           status: 'COMPLETED',
@@ -1295,64 +1369,133 @@ export class EquityService {
           quantity: true,
         },
       }),
-      this.prisma.terminationRecord.aggregate({
+      this.prisma.terminationRecord.findMany({
         where: {
           organizationId: actor.organizationId,
-          grant: {
-            is: {
-              awardType: {
-                in: ['OPTION_ISO', 'OPTION_NSO'],
-              },
-            },
-          },
+          grantId: { not: null },
         },
-        _sum: {
+        orderBy: [{ grantId: 'asc' }, { terminatedAt: 'desc' }],
+        select: {
+          grantId: true,
+          terminatedAt: true,
           unvestedQuantityAtEnd: true,
         },
       }),
-      this.prisma.terminationRecord.aggregate({
+      this.prisma.equityTransaction.findMany({
         where: {
           organizationId: actor.organizationId,
-          grant: {
-            is: {
-              awardType: 'RSU',
-            },
-          },
+          OR: [{ toPersonId: { not: null } }, { fromPersonId: { not: null } }],
         },
-        _sum: {
-          unvestedQuantityAtEnd: true,
+        select: {
+          type: true,
+          grantId: true,
+          quantity: true,
+          toPersonId: true,
+          fromPersonId: true,
+          metadata: true,
         },
-      }),
-      this.prisma.equityTransaction.groupBy({
-        by: ['toPersonId'],
-        orderBy: { toPersonId: 'asc' },
-        where: {
-          organizationId: actor.organizationId,
-          toPersonId: { not: null },
-        },
-        _sum: { quantity: true },
-      }),
-      this.prisma.equityTransaction.groupBy({
-        by: ['fromPersonId'],
-        orderBy: { fromPersonId: 'asc' },
-        where: {
-          organizationId: actor.organizationId,
-          fromPersonId: { not: null },
-        },
-        _sum: { quantity: true },
+        orderBy: [{ effectiveAt: 'asc' }, { ledgerSequence: 'asc' }],
+        take: 4000,
       }),
     ]);
 
-    const outgoingMap = new Map<string, Decimal>();
-    for (const row of issuedFrom) {
-      if (row.fromPersonId) {
-        outgoingMap.set(row.fromPersonId, row._sum?.quantity ?? new Decimal(0));
+    const exerciseByGrant = new Map<string, Decimal>();
+    completedExercisesByGrant.forEach((row) => {
+      exerciseByGrant.set(row.grantId, this.decimal(row._sum.quantity));
+    });
+
+    const terminationByGrant = new Map<string, { terminatedAt: Date; unvestedQuantityAtEnd: Decimal }>();
+    for (const row of terminations) {
+      if (!row.grantId || terminationByGrant.has(row.grantId)) {
+        continue;
+      }
+      terminationByGrant.set(row.grantId, {
+        terminatedAt: row.terminatedAt,
+        unvestedQuantityAtEnd: this.decimal(row.unvestedQuantityAtEnd),
+      });
+    }
+
+    const positionMap = new Map<string, { personId: string; shareType: string; shares: Decimal }>();
+    const addPosition = (personId: string, shareType: string, delta: Decimal) => {
+      const key = `${personId}:${shareType}`;
+      const existing = positionMap.get(key);
+      if (existing) {
+        existing.shares = existing.shares.add(delta);
+        return;
+      }
+      positionMap.set(key, {
+        personId,
+        shareType,
+        shares: delta,
+      });
+    };
+
+    let outstandingOptions = new Decimal(0);
+    let outstandingRsus = new Decimal(0);
+    let advisorAssigned = new Decimal(0);
+    let advisorOutstanding = new Decimal(0);
+    let advisorReturned = new Decimal(0);
+    let managementAssigned = new Decimal(0);
+    let managementOutstanding = new Decimal(0);
+    let managementReturned = new Decimal(0);
+
+    for (const grant of grants) {
+      const grantQuantity = this.decimal(grant.quantity);
+      const exercised = exerciseByGrant.get(grant.id) ?? new Decimal(0);
+      const remainingAfterExercise = this.clampNonNegative(grantQuantity.sub(exercised));
+      const terminated = terminationByGrant.has(grant.id);
+      const returnedOnTermination = terminated ? remainingAfterExercise : new Decimal(0);
+      const outstanding = terminated ? new Decimal(0) : remainingAfterExercise;
+
+      if (grant.awardType === 'OPTION_ISO' || grant.awardType === 'OPTION_NSO') {
+        outstandingOptions = outstandingOptions.add(outstanding);
+      }
+      if (grant.awardType === 'RSU') {
+        outstandingRsus = outstandingRsus.add(outstanding);
+      }
+
+      if (outstanding.gt(0)) {
+        addPosition(grant.personId, grant.awardType, outstanding);
+      }
+
+      const inAdvisorPool = grant.planId ? poolConfig.advisorPlanIds.has(grant.planId) : false;
+      const inManagementPool = grant.planId
+        ? poolConfig.managementPlanIds.size === 0 || poolConfig.managementPlanIds.has(grant.planId)
+        : true;
+
+      if (inAdvisorPool) {
+        advisorAssigned = advisorAssigned.add(grantQuantity);
+        advisorOutstanding = advisorOutstanding.add(outstanding);
+        advisorReturned = advisorReturned.add(returnedOnTermination);
+      } else if (inManagementPool) {
+        managementAssigned = managementAssigned.add(grantQuantity);
+        managementOutstanding = managementOutstanding.add(outstanding);
+        managementReturned = managementReturned.add(returnedOnTermination);
+      } else {
+        managementAssigned = managementAssigned.add(grantQuantity);
+        managementOutstanding = managementOutstanding.add(outstanding);
+        managementReturned = managementReturned.add(returnedOnTermination);
       }
     }
 
-    const personIds = issuedTo
-      .map((row) => row.toPersonId)
-      .filter((personId): personId is string => typeof personId === 'string');
+    for (const txn of txns) {
+      if (txn.type === 'GRANT') {
+        continue;
+      }
+
+      const instrumentType = this.readTransactionInstrumentType(txn.metadata, txn.type);
+      const quantity = this.decimal(txn.quantity);
+
+      if (txn.toPersonId) {
+        addPosition(txn.toPersonId, instrumentType, quantity);
+      }
+      if (txn.fromPersonId) {
+        addPosition(txn.fromPersonId, instrumentType, quantity.neg());
+      }
+    }
+
+    const positivePositions = Array.from(positionMap.values()).filter((row) => row.shares.gt(0));
+    const personIds = Array.from(new Set(positivePositions.map((row) => row.personId)));
 
     const people = personIds.length
       ? await this.prisma.person.findMany({
@@ -1370,53 +1513,115 @@ export class EquityService {
 
     const peopleMap = new Map(people.map((person) => [person.id, `${person.legalFirstName} ${person.legalLastName}`]));
 
-    const holderRows = issuedTo
-      .filter((row) => row.toPersonId)
+    const commonIssuedShares = positivePositions
+      .filter((row) => row.shareType.startsWith('COMMON_'))
+      .reduce((sum, row) => sum.add(row.shares), new Decimal(0));
+
+    const equityInstrumentsOutstanding = outstandingOptions.add(outstandingRsus);
+    const fullyDilutedShares = totalAvailableShares.gt(0)
+      ? totalAvailableShares
+      : commonIssuedShares.add(equityInstrumentsOutstanding);
+
+    const valuationDenominator = fullyDilutedShares.gt(0) ? fullyDilutedShares : new Decimal(0);
+    const enterpriseValue = this.decimal(latestValuation?.enterpriseValue);
+    const perShareValue = valuationDenominator.gt(0)
+      ? enterpriseValue.div(valuationDenominator)
+      : new Decimal(0);
+
+    const ownershipTable = positivePositions
       .map((row) => {
-        const incoming = row._sum?.quantity ?? new Decimal(0);
-        const outgoing = outgoingMap.get(row.toPersonId as string) ?? new Decimal(0);
-        const net = incoming.sub(outgoing);
+        const ownershipPercent = valuationDenominator.gt(0)
+          ? row.shares.div(valuationDenominator).mul(100)
+          : new Decimal(0);
+        const estimatedValue = row.shares.mul(perShareValue);
+
         return {
-          personId: row.toPersonId as string,
-          personName: peopleMap.get(row.toPersonId as string) ?? 'Unknown',
-          outstandingQuantity: this.renderDecimal(this.clampNonNegative(net)),
+          personId: row.personId,
+          personName: peopleMap.get(row.personId) ?? 'Unknown',
+          shareType: row.shareType,
+          sharesOwned: this.renderDecimal(row.shares),
+          ownershipPercent: ownershipPercent.toFixed(4),
+          estimatedValue: estimatedValue.toFixed(2),
         };
       })
-      .filter((row) => new Decimal(row.outstandingQuantity).gt(0))
+      .sort((a, b) => new Decimal(b.sharesOwned).cmp(new Decimal(a.sharesOwned)));
+
+    const holderAggregate = new Map<string, Decimal>();
+    ownershipTable.forEach((row) => {
+      holderAggregate.set(row.personId, (holderAggregate.get(row.personId) ?? new Decimal(0)).add(row.sharesOwned));
+    });
+
+    const holderRows = Array.from(holderAggregate.entries())
+      .map(([personId, quantity]) => ({
+        personId,
+        personName: peopleMap.get(personId) ?? 'Unknown',
+        outstandingQuantity: this.renderDecimal(quantity),
+      }))
       .sort((a, b) => new Decimal(b.outstandingQuantity).cmp(new Decimal(a.outstandingQuantity)));
 
-    const optionsGranted = this.decimal(optionGrantTotals._sum.quantity);
-    const rsusGranted = this.decimal(rsuGrantTotals._sum.quantity);
-    const exercised = this.decimal(completedExerciseTotals._sum.quantity);
-    const forfeitedOptions = this.decimal(forfeitedOptionTotals._sum.unvestedQuantityAtEnd);
-    const forfeitedRsus = this.decimal(forfeitedRsuTotals._sum.unvestedQuantityAtEnd);
+    const advisorUnassigned = this.clampNonNegative(poolConfig.advisorPoolShares.sub(advisorOutstanding));
+    const managementUnassigned = this.clampNonNegative(poolConfig.managementPoolShares.sub(managementOutstanding));
 
-    const outstandingOptions = this.clampNonNegative(optionsGranted.sub(exercised).sub(forfeitedOptions));
-    const outstandingRsus = this.clampNonNegative(rsusGranted.sub(forfeitedRsus));
-    const equityInstrumentsOutstanding = outstandingOptions.add(outstandingRsus);
-    const fullyDilutedShares = baseOutstandingShares.add(equityInstrumentsOutstanding);
+    const reservedConfigured = commonIssuedShares
+      .add(poolConfig.advisorPoolShares)
+      .add(poolConfig.managementPoolShares);
+    const unassignedOverall = totalAvailableShares.gt(0)
+      ? this.clampNonNegative(totalAvailableShares.sub(reservedConfigured))
+      : new Decimal(0);
+    const overAllocated = totalAvailableShares.gt(0) && reservedConfigured.gt(totalAvailableShares)
+      ? reservedConfigured.sub(totalAvailableShares)
+      : new Decimal(0);
 
-    const reservedPoolShares = this.decimal(planReserveTotals._sum.reservedShares);
-    const grantedPoolShares = this.decimal(grantTotals._sum.quantity);
-    const remainingPoolShares = this.clampNonNegative(reservedPoolShares.sub(grantedPoolShares));
     const authorizedShares = this.decimal(securityClassTotals._sum.authorizedShares);
 
     return {
       generatedAt: new Date().toISOString(),
+      valuation: {
+        sourceValuationId: latestValuation?.id ?? null,
+        effectiveDate: latestValuation?.effectiveDate?.toISOString() ?? null,
+        enterpriseValue: this.renderDecimal(enterpriseValue),
+        perShareValue: perShareValue.toFixed(6),
+        denominatorShares: this.renderDecimal(valuationDenominator),
+      },
       shares: {
-        baseOutstandingShares: this.renderDecimal(baseOutstandingShares),
+        totalAvailableShares: this.renderDecimal(totalAvailableShares),
+        issuedCommonShares: this.renderDecimal(commonIssuedShares),
+        advisorPoolShares: this.renderDecimal(poolConfig.advisorPoolShares),
+        managementPoolShares: this.renderDecimal(poolConfig.managementPoolShares),
+        unassignedOverallShares: this.renderDecimal(unassignedOverall),
+        overAllocatedShares: this.renderDecimal(overAllocated),
+        baseOutstandingShares: this.renderDecimal(totalAvailableShares),
         authorizedShares: this.renderDecimal(authorizedShares),
         outstandingOptions: this.renderDecimal(outstandingOptions),
         outstandingRsus: this.renderDecimal(outstandingRsus),
         equityInstrumentsOutstanding: this.renderDecimal(equityInstrumentsOutstanding),
         fullyDilutedShares: this.renderDecimal(fullyDilutedShares),
       },
+      pools: {
+        advisor: {
+          configuredShares: this.renderDecimal(poolConfig.advisorPoolShares),
+          assignedShares: this.renderDecimal(advisorAssigned),
+          outstandingShares: this.renderDecimal(advisorOutstanding),
+          returnedShares: this.renderDecimal(advisorReturned),
+          unassignedShares: this.renderDecimal(advisorUnassigned),
+          planIds: Array.from(poolConfig.advisorPlanIds),
+        },
+        management: {
+          configuredShares: this.renderDecimal(poolConfig.managementPoolShares),
+          assignedShares: this.renderDecimal(managementAssigned),
+          outstandingShares: this.renderDecimal(managementOutstanding),
+          returnedShares: this.renderDecimal(managementReturned),
+          unassignedShares: this.renderDecimal(managementUnassigned),
+          planIds: Array.from(poolConfig.managementPlanIds),
+        },
+      },
       optionPool: {
-        reservedShares: this.renderDecimal(reservedPoolShares),
-        grantedShares: this.renderDecimal(grantedPoolShares),
-        remainingShares: this.renderDecimal(remainingPoolShares),
+        reservedShares: this.renderDecimal(poolConfig.managementPoolShares),
+        grantedShares: this.renderDecimal(managementAssigned),
+        remainingShares: this.renderDecimal(managementUnassigned),
       },
       holders: holderRows,
+      ownershipTable,
     };
   }
 
@@ -1453,9 +1658,76 @@ export class EquityService {
     return this.getCapTable(actor);
   }
 
+  async updateCapTablePools(actor: AuthenticatedUser, dto: UpdateCapTablePoolsDto) {
+    const advisorPoolShares = this.parseDecimalInput(dto.advisorPoolShares, 'advisor pool shares', {
+      allowZero: true,
+    });
+    const managementPoolShares = this.parseDecimalInput(dto.managementPoolShares, 'management pool shares', {
+      allowZero: true,
+    });
+
+    if (dto.advisorPlanIds && dto.advisorPlanIds.length > 0) {
+      const found = await this.prisma.equityPlan.count({
+        where: {
+          organizationId: actor.organizationId,
+          id: { in: dto.advisorPlanIds },
+        },
+      });
+      if (found !== dto.advisorPlanIds.length) {
+        throw new BadRequestException('One or more advisor pool plan IDs are invalid');
+      }
+    }
+
+    if (dto.managementPlanIds && dto.managementPlanIds.length > 0) {
+      const found = await this.prisma.equityPlan.count({
+        where: {
+          organizationId: actor.organizationId,
+          id: { in: dto.managementPlanIds },
+        },
+      });
+      if (found !== dto.managementPlanIds.length) {
+        throw new BadRequestException('One or more management pool plan IDs are invalid');
+      }
+    }
+
+    await this.prisma.systemSetting.upsert({
+      where: {
+        organizationId_section_key: {
+          organizationId: actor.organizationId,
+          section: 'equity',
+          key: 'capTablePools',
+        },
+      },
+      update: {
+        value: {
+          advisorPoolShares: this.renderDecimal(advisorPoolShares),
+          managementPoolShares: this.renderDecimal(managementPoolShares),
+          advisorPlanIds: dto.advisorPlanIds ?? [],
+          managementPlanIds: dto.managementPlanIds ?? [],
+        } as Prisma.InputJsonValue,
+        updatedByUserId: actor.id,
+      },
+      create: {
+        organizationId: actor.organizationId,
+        section: 'equity',
+        key: 'capTablePools',
+        value: {
+          advisorPoolShares: this.renderDecimal(advisorPoolShares),
+          managementPoolShares: this.renderDecimal(managementPoolShares),
+          advisorPlanIds: dto.advisorPlanIds ?? [],
+          managementPlanIds: dto.managementPlanIds ?? [],
+        } as Prisma.InputJsonValue,
+        updatedByUserId: actor.id,
+      },
+    });
+
+    return this.getCapTable(actor);
+  }
+
   async createTransaction(actor: AuthenticatedUser, dto: CreateEquityTransactionDto) {
     const quantity = this.parseDecimalInput(dto.quantity, 'quantity');
     const effectiveAt = this.parseDateInput(dto.effectiveAt, 'effectiveAt', true) as Date;
+    const instrumentType = dto.instrumentType?.trim().toUpperCase();
 
     if (dto.fromPersonId) {
       await this.ensurePersonInOrg(actor.organizationId, dto.fromPersonId);
@@ -1512,6 +1784,11 @@ export class EquityService {
         fromPersonId: dto.fromPersonId,
         toPersonId: dto.toPersonId,
         reason: dto.reason,
+        metadata: instrumentType
+          ? ({
+              instrumentType,
+            } as Prisma.InputJsonValue)
+          : undefined,
         ledgerSequence,
         createdByUserId: actor.id,
       },
@@ -1534,6 +1811,15 @@ export class EquityService {
     await this.ensurePersonInOrg(actor.organizationId, dto.personId);
 
     const planId = dto.planId?.trim() || undefined;
+    const poolConfig = await this.getCapTablePoolConfig(actor.organizationId);
+
+    if (!planId) {
+      throw new BadRequestException('Grants must be assigned to a management equity pool plan');
+    }
+
+    if (poolConfig.managementPlanIds.size > 0 && !poolConfig.managementPlanIds.has(planId)) {
+      throw new BadRequestException('Selected plan is not configured as a management equity pool');
+    }
 
     const isOption = dto.awardType === 'OPTION_ISO' || dto.awardType === 'OPTION_NSO';
     const exercisePrice = dto.exercisePrice
@@ -1708,10 +1994,17 @@ export class EquityService {
     await this.ensurePersonInOrg(actor.organizationId, dto.personId);
 
     const planId = dto.planId?.trim() || undefined;
+    const poolConfig = await this.getCapTablePoolConfig(actor.organizationId);
 
-    if (planId) {
-      await this.ensurePlanInOrg(actor.organizationId, planId);
+    if (!planId) {
+      throw new BadRequestException('Grants must be assigned to a management equity pool plan');
     }
+
+    if (poolConfig.managementPlanIds.size > 0 && !poolConfig.managementPlanIds.has(planId)) {
+      throw new BadRequestException('Selected plan is not configured as a management equity pool');
+    }
+
+    await this.ensurePlanInOrg(actor.organizationId, planId);
 
     const isOption = dto.awardType === 'OPTION_ISO' || dto.awardType === 'OPTION_NSO';
     const exercisePrice = dto.exercisePrice

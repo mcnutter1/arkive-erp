@@ -11,6 +11,7 @@ import {
   CreateEquityTransactionDto,
   CreateGrantAwardDto,
   UpdateCapTableBaseDto,
+  UpdateCapTablePoolsDto,
   UpdateEquityPlanDto,
   UpdateGrantAwardDto,
 } from './dto.js';
@@ -105,6 +106,12 @@ export class EquityController {
   @RequirePermissions('equity.write')
   updateCapTableBase(@CurrentUser() actor: AuthenticatedUser, @Body() dto: UpdateCapTableBaseDto) {
     return this.equityService.updateCapTableBase(actor, dto);
+  }
+
+  @Post('cap-table/pools')
+  @RequirePermissions('equity.write')
+  updateCapTablePools(@CurrentUser() actor: AuthenticatedUser, @Body() dto: UpdateCapTablePoolsDto) {
+    return this.equityService.updateCapTablePools(actor, dto);
   }
 
   @Post('ledger')

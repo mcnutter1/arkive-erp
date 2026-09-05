@@ -61,6 +61,7 @@ type EquityTxn = {
   toPersonId: string | null;
   ledgerSequence: string;
   reason: string | null;
+  metadata?: Record<string, unknown> | null;
 };
 
 type DashboardResponse = {
@@ -80,13 +81,44 @@ type DashboardResponse = {
 
 type CapTableResponse = {
   generatedAt: string;
+  valuation: {
+    sourceValuationId: string | null;
+    effectiveDate: string | null;
+    enterpriseValue: string;
+    perShareValue: string;
+    denominatorShares: string;
+  };
   shares: {
+    totalAvailableShares: string;
+    issuedCommonShares: string;
+    advisorPoolShares: string;
+    managementPoolShares: string;
+    unassignedOverallShares: string;
+    overAllocatedShares: string;
     baseOutstandingShares: string;
     authorizedShares: string;
     outstandingOptions: string;
     outstandingRsus: string;
     equityInstrumentsOutstanding: string;
     fullyDilutedShares: string;
+  };
+  pools: {
+    advisor: {
+      configuredShares: string;
+      assignedShares: string;
+      outstandingShares: string;
+      returnedShares: string;
+      unassignedShares: string;
+      planIds: string[];
+    };
+    management: {
+      configuredShares: string;
+      assignedShares: string;
+      outstandingShares: string;
+      returnedShares: string;
+      unassignedShares: string;
+      planIds: string[];
+    };
   };
   optionPool: {
     reservedShares: string;
@@ -98,6 +130,21 @@ type CapTableResponse = {
     personName: string;
     outstandingQuantity: string;
   }>;
+  ownershipTable: Array<{
+    personId: string;
+    personName: string;
+    shareType: string;
+    sharesOwned: string;
+    ownershipPercent: string;
+    estimatedValue: string;
+  }>;
+};
+
+type PoolConfigFormState = {
+  advisorPoolShares: string;
+  managementPoolShares: string;
+  advisorPlanIds: string[];
+  managementPlanIds: string[];
 };
 
 type GrantFormState = {
@@ -126,7 +173,7 @@ type PlanFormState = {
   expiryDate: string;
 };
 
-type ModalView = 'grant' | 'plan' | 'openingBalance' | 'manualTxn' | 'baseShares' | null;
+type ModalView = 'grant' | 'plan' | 'openingBalance' | 'manualTxn' | 'baseShares' | 'poolConfig' | null;
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? '/api/v1';
 const companyTreasuryValue = '__COMPANY__';
@@ -186,6 +233,13 @@ function formatShares(value: string | number | null | undefined): string {
   });
 }
 
+function formatShareType(value: string): string {
+  return value
+    .split('_')
+    .map((part) => part.slice(0, 1) + part.slice(1).toLowerCase())
+    .join(' ');
+}
+
 function defaultGrantForm(): GrantFormState {
   const today = dateInputToday();
   return {
@@ -214,6 +268,15 @@ function defaultPlanForm(): PlanFormState {
     status: 'DRAFT',
     effectiveDate: '',
     expiryDate: '',
+  };
+}
+
+function defaultPoolConfigForm(): PoolConfigFormState {
+  return {
+    advisorPoolShares: '0',
+    managementPoolShares: '0',
+    advisorPlanIds: [],
+    managementPlanIds: [],
   };
 }
 
@@ -296,8 +359,10 @@ export default function EquityPage() {
   const [editingGrantId, setEditingGrantId] = useState<string | null>(null);
 
   const [planForm, setPlanForm] = useState<PlanFormState>(defaultPlanForm());
+  const [poolConfigForm, setPoolConfigForm] = useState<PoolConfigFormState>(defaultPoolConfigForm());
   const [savingGrant, setSavingGrant] = useState(false);
   const [savingPlan, setSavingPlan] = useState(false);
+  const [savingPoolConfig, setSavingPoolConfig] = useState(false);
   const [savingCapTableBase, setSavingCapTableBase] = useState(false);
   const [savingOpeningBalance, setSavingOpeningBalance] = useState(false);
   const [savingTxn, setSavingTxn] = useState(false);
@@ -310,7 +375,20 @@ export default function EquityPage() {
   const capTableView: CapTableResponse =
     capTable ?? {
       generatedAt: new Date().toISOString(),
+      valuation: {
+        sourceValuationId: null,
+        effectiveDate: null,
+        enterpriseValue: '0',
+        perShareValue: '0',
+        denominatorShares: '0',
+      },
       shares: {
+        totalAvailableShares: '0',
+        issuedCommonShares: '0',
+        advisorPoolShares: '0',
+        managementPoolShares: '0',
+        unassignedOverallShares: '0',
+        overAllocatedShares: '0',
         baseOutstandingShares: '0',
         authorizedShares: '0',
         outstandingOptions: '0',
@@ -318,15 +396,34 @@ export default function EquityPage() {
         equityInstrumentsOutstanding: '0',
         fullyDilutedShares: '0',
       },
+      pools: {
+        advisor: {
+          configuredShares: '0',
+          assignedShares: '0',
+          outstandingShares: '0',
+          returnedShares: '0',
+          unassignedShares: '0',
+          planIds: [],
+        },
+        management: {
+          configuredShares: '0',
+          assignedShares: '0',
+          outstandingShares: '0',
+          returnedShares: '0',
+          unassignedShares: '0',
+          planIds: [],
+        },
+      },
       optionPool: {
         reservedShares: '0',
         grantedShares: '0',
         remainingShares: '0',
       },
       holders: [],
+      ownershipTable: [],
     };
 
-  const hasBaseShares = Number(capTableView.shares.baseOutstandingShares) > 0;
+  const hasBaseShares = Number(capTableView.shares.totalAvailableShares) > 0;
 
   async function loadData() {
     setLoading(true);
@@ -380,7 +477,13 @@ export default function EquityPage() {
       if (capTableResp.ok) {
         const capPayload = (await capTableResp.json()) as CapTableResponse;
         setCapTable(capPayload);
-        setShowBaseEditor(Number(capPayload.shares.baseOutstandingShares) <= 0);
+        setPoolConfigForm({
+          advisorPoolShares: capPayload.pools.advisor.configuredShares,
+          managementPoolShares: capPayload.pools.management.configuredShares,
+          advisorPlanIds: capPayload.pools.advisor.planIds,
+          managementPlanIds: capPayload.pools.management.planIds,
+        });
+        setShowBaseEditor(Number(capPayload.shares.totalAvailableShares) <= 0);
       } else {
         setCapTable(null);
         setCapTableLoadError(await readApiError(capTableResp, 'Cap table is unavailable right now.'));
@@ -451,6 +554,13 @@ export default function EquityPage() {
     setNotice(null);
   }
 
+  function openPoolConfigModal() {
+    setModalView('poolConfig');
+    setActiveTab('overview');
+    setError(null);
+    setNotice(null);
+  }
+
   async function onSubmitGrant(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSavingGrant(true);
@@ -462,6 +572,12 @@ export default function EquityPage() {
 
     if (!grantForm.personId) {
       setError('Select a recipient.');
+      setSavingGrant(false);
+      return;
+    }
+
+    if (!grantForm.planId) {
+      setError('Select a management pool plan for this grant.');
       setSavingGrant(false);
       return;
     }
@@ -652,7 +768,7 @@ export default function EquityPage() {
     const outstandingShares = normalizeNumericInput(String(form.get('outstandingShares') ?? ''));
 
     if (!outstandingShares || !isDecimalLike(outstandingShares)) {
-      setError('Base outstanding shares must be numeric.');
+      setError('Total available shares must be numeric.');
       setSavingCapTableBase(false);
       return;
     }
@@ -666,19 +782,81 @@ export default function EquityPage() {
       });
 
       if (!response.ok) {
-        setError(await readApiError(response, 'Unable to update base outstanding shares.'));
+        setError(await readApiError(response, 'Unable to update total available shares.'));
         return;
       }
 
       const payload = (await response.json()) as CapTableResponse;
       setCapTable(payload);
+      setPoolConfigForm({
+        advisorPoolShares: payload.pools.advisor.configuredShares,
+        managementPoolShares: payload.pools.management.configuredShares,
+        advisorPlanIds: payload.pools.advisor.planIds,
+        managementPlanIds: payload.pools.management.planIds,
+      });
       setShowBaseEditor(false);
       setModalView(null);
-      setNotice('Base outstanding shares saved.');
+      setNotice('Total available shares saved.');
     } catch {
-      setError('Unable to update base outstanding shares.');
+      setError('Unable to update total available shares.');
     } finally {
       setSavingCapTableBase(false);
+    }
+  }
+
+  async function onSavePoolConfig(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSavingPoolConfig(true);
+    setError(null);
+    setNotice(null);
+
+    const advisorPoolShares = normalizeNumericInput(poolConfigForm.advisorPoolShares);
+    const managementPoolShares = normalizeNumericInput(poolConfigForm.managementPoolShares);
+
+    if (!isDecimalLike(advisorPoolShares) || Number(advisorPoolShares) < 0) {
+      setError('Advisor pool shares must be a non-negative number.');
+      setSavingPoolConfig(false);
+      return;
+    }
+
+    if (!isDecimalLike(managementPoolShares) || Number(managementPoolShares) < 0) {
+      setError('Management pool shares must be a non-negative number.');
+      setSavingPoolConfig(false);
+      return;
+    }
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/equity/cap-table/pools`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          advisorPoolShares,
+          managementPoolShares,
+          advisorPlanIds: poolConfigForm.advisorPlanIds,
+          managementPlanIds: poolConfigForm.managementPlanIds,
+        }),
+      });
+
+      if (!response.ok) {
+        setError(await readApiError(response, 'Unable to save pool configuration.'));
+        return;
+      }
+
+      const payload = (await response.json()) as CapTableResponse;
+      setCapTable(payload);
+      setPoolConfigForm({
+        advisorPoolShares: payload.pools.advisor.configuredShares,
+        managementPoolShares: payload.pools.management.configuredShares,
+        advisorPlanIds: payload.pools.advisor.planIds,
+        managementPlanIds: payload.pools.management.planIds,
+      });
+      setModalView(null);
+      setNotice('Cap table pools updated.');
+    } catch {
+      setError('Unable to save pool configuration.');
+    } finally {
+      setSavingPoolConfig(false);
     }
   }
 
@@ -693,6 +871,7 @@ export default function EquityPage() {
     const quantity = normalizeNumericInput(String(form.get('quantity') ?? ''));
     const effectiveDate = String(form.get('effectiveDate') ?? '').trim();
     const reason = String(form.get('reason') ?? '').trim();
+    const commonStockType = String(form.get('commonStockType') ?? 'FOUNDER').trim();
 
     if (!personId) {
       setError('Select a holder.');
@@ -723,6 +902,7 @@ export default function EquityPage() {
           effectiveAt,
           quantity,
           toPersonId: personId,
+          instrumentType: `COMMON_${commonStockType}`,
           reason: reason || 'Opening cap table balance',
         }),
       });
@@ -845,6 +1025,7 @@ export default function EquityPage() {
     const effectiveAtRaw = String(form.get('effectiveAt') ?? '').trim();
     const fromHolder = String(form.get('fromPersonId') ?? companyTreasuryValue);
     const toHolder = String(form.get('toPersonId') ?? companyTreasuryValue);
+    const instrumentType = String(form.get('instrumentType') ?? 'COMMON_OTHER').trim();
 
     if (!type) {
       setError('Transaction type is required.');
@@ -873,6 +1054,7 @@ export default function EquityPage() {
       fromPersonId: fromHolder === companyTreasuryValue ? undefined : fromHolder,
       toPersonId: toHolder === companyTreasuryValue ? undefined : toHolder,
       reason: String(form.get('reason') ?? '').trim() || undefined,
+      instrumentType,
     };
 
     try {
@@ -990,15 +1172,24 @@ export default function EquityPage() {
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h2 className="text-lg font-semibold text-slate-900">Cap Table Snapshot</h2>
-                <p className="mt-1 text-sm text-slate-600">Live dilution, pool status, and holder balances.</p>
+                <p className="mt-1 text-sm text-slate-600">Structured as available shares, issued common, advisor pool, and management pool with ownership value.</p>
               </div>
-              <button
-                type="button"
-                onClick={openBaseSharesModal}
-                className="rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-100"
-              >
-                {hasBaseShares ? 'Update Base Shares' : 'Set Base Shares'}
-              </button>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={openBaseSharesModal}
+                  className="rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-100"
+                >
+                  {hasBaseShares ? 'Update Total Shares' : 'Set Total Shares'}
+                </button>
+                <button
+                  type="button"
+                  onClick={openPoolConfigModal}
+                  className="rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-100"
+                >
+                  Configure Pools
+                </button>
+              </div>
             </div>
 
             {capTableLoadError ? (
@@ -1009,62 +1200,72 @@ export default function EquityPage() {
 
             {showBaseEditor ? (
               <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                Base outstanding shares are not configured yet.
+                Total available shares are not configured yet.
               </div>
             ) : null}
 
             <div className="mt-4 grid gap-3 md:grid-cols-3">
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <p className="text-xs uppercase tracking-wide text-slate-500">Base Outstanding</p>
-                <p className="mt-1 text-lg font-semibold text-slate-900">{formatShares(capTableView.shares.baseOutstandingShares)}</p>
+                <p className="text-xs uppercase tracking-wide text-slate-500">Total Available Shares</p>
+                <p className="mt-1 text-lg font-semibold text-slate-900">{formatShares(capTableView.shares.totalAvailableShares)}</p>
               </div>
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <p className="text-xs uppercase tracking-wide text-slate-500">Outstanding Instruments</p>
-                <p className="mt-1 text-lg font-semibold text-slate-900">{formatShares(capTableView.shares.equityInstrumentsOutstanding)}</p>
+                <p className="text-xs uppercase tracking-wide text-slate-500">Common Stock Issued</p>
+                <p className="mt-1 text-lg font-semibold text-slate-900">{formatShares(capTableView.shares.issuedCommonShares)}</p>
               </div>
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <p className="text-xs uppercase tracking-wide text-slate-500">Fully Diluted</p>
-                <p className="mt-1 text-lg font-semibold text-slate-900">{formatShares(capTableView.shares.fullyDilutedShares)}</p>
+                <p className="text-xs uppercase tracking-wide text-slate-500">Unassigned Overall</p>
+                <p className="mt-1 text-lg font-semibold text-slate-900">{formatShares(capTableView.shares.unassignedOverallShares)}</p>
               </div>
             </div>
 
             <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
               <div className="rounded-xl border border-slate-200 p-3">
-                <p className="text-xs uppercase tracking-wide text-slate-500">Authorized</p>
-                <p className="mt-1 text-sm font-semibold text-slate-900">{formatShares(capTableView.shares.authorizedShares)}</p>
+                <p className="text-xs uppercase tracking-wide text-slate-500">Advisor Pool</p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">{formatShares(capTableView.shares.advisorPoolShares)}</p>
+                <p className="text-xs text-slate-500">Unassigned: {formatShares(capTableView.pools.advisor.unassignedShares)}</p>
               </div>
               <div className="rounded-xl border border-slate-200 p-3">
-                <p className="text-xs uppercase tracking-wide text-slate-500">Pool Reserved</p>
-                <p className="mt-1 text-sm font-semibold text-slate-900">{formatShares(capTableView.optionPool.reservedShares)}</p>
+                <p className="text-xs uppercase tracking-wide text-slate-500">Management Pool</p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">{formatShares(capTableView.shares.managementPoolShares)}</p>
+                <p className="text-xs text-slate-500">Unassigned: {formatShares(capTableView.pools.management.unassignedShares)}</p>
               </div>
               <div className="rounded-xl border border-slate-200 p-3">
-                <p className="text-xs uppercase tracking-wide text-slate-500">Pool Granted</p>
-                <p className="mt-1 text-sm font-semibold text-slate-900">{formatShares(capTableView.optionPool.grantedShares)}</p>
+                <p className="text-xs uppercase tracking-wide text-slate-500">EV Per Share</p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">${formatShares(capTableView.valuation.perShareValue)}</p>
+                <p className="text-xs text-slate-500">Enterprise Value: ${formatShares(capTableView.valuation.enterpriseValue)}</p>
               </div>
               <div className="rounded-xl border border-slate-200 p-3">
-                <p className="text-xs uppercase tracking-wide text-slate-500">Pool Remaining</p>
-                <p className="mt-1 text-sm font-semibold text-slate-900">{formatShares(capTableView.optionPool.remainingShares)}</p>
+                <p className="text-xs uppercase tracking-wide text-slate-500">Over Allocation</p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">{formatShares(capTableView.shares.overAllocatedShares)}</p>
+                <p className="text-xs text-slate-500">Options + RSU Outstanding: {formatShares(capTableView.shares.equityInstrumentsOutstanding)}</p>
               </div>
             </div>
 
             <div className="mt-5">
-              <h3 className="text-sm font-semibold text-slate-900">Outstanding by Holder</h3>
-              {capTableView.holders.length === 0 ? (
-                <p className="mt-2 text-sm text-slate-600">No holder balances yet. Add opening balances from Operations.</p>
+              <h3 className="text-sm font-semibold text-slate-900">Ownership Table</h3>
+              {capTableView.ownershipTable.length === 0 ? (
+                <p className="mt-2 text-sm text-slate-600">No ownership rows yet. Record common stock issuance and grants from Operations.</p>
               ) : (
                 <div className="mt-2 overflow-x-auto">
                   <table className="min-w-full text-left text-sm">
                     <thead className="text-xs uppercase tracking-wide text-slate-500">
                       <tr>
                         <th className="pb-2 pr-4">Holder</th>
-                        <th className="pb-2 pr-4">Outstanding</th>
+                        <th className="pb-2 pr-4">Type</th>
+                        <th className="pb-2 pr-4">Shares Owned</th>
+                        <th className="pb-2 pr-4">Ownership %</th>
+                        <th className="pb-2 pr-4">Value</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {capTableView.holders.map((holder) => (
-                        <tr key={holder.personId} className="border-t border-slate-200">
-                          <td className="py-2 pr-4 font-medium text-slate-900">{holder.personName}</td>
-                          <td className="py-2 pr-4 text-slate-700">{formatShares(holder.outstandingQuantity)}</td>
+                      {capTableView.ownershipTable.map((row) => (
+                        <tr key={`${row.personId}-${row.shareType}`} className="border-t border-slate-200">
+                          <td className="py-2 pr-4 font-medium text-slate-900">{row.personName}</td>
+                          <td className="py-2 pr-4 text-slate-700">{formatShareType(row.shareType)}</td>
+                          <td className="py-2 pr-4 text-slate-700">{formatShares(row.sharesOwned)}</td>
+                          <td className="py-2 pr-4 text-slate-700">{Number(row.ownershipPercent).toFixed(2)}%</td>
+                          <td className="py-2 pr-4 text-slate-700">${formatShares(row.estimatedValue)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -1201,8 +1402,8 @@ export default function EquityPage() {
           <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <h2 className="text-lg font-semibold text-slate-900">Option Pool Management</h2>
-                <p className="mt-1 text-sm text-slate-600">Create and update equity plans without leaving the table view.</p>
+                <h2 className="text-lg font-semibold text-slate-900">Pool Plan Management</h2>
+                <p className="mt-1 text-sm text-slate-600">Create advisor and management plans and map them in pool configuration.</p>
               </div>
               <button
                 type="button"
@@ -1258,7 +1459,7 @@ export default function EquityPage() {
 
           <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <h2 className="text-lg font-semibold text-slate-900">Ledger Operations</h2>
-            <p className="mt-1 text-sm text-slate-600">Record opening balances and manual entries through focused dialogs.</p>
+            <p className="mt-1 text-sm text-slate-600">Record opening balances, stock sales via TRANSFER entries, and corrective transactions through focused dialogs.</p>
 
             <div className="mt-4 grid gap-2 sm:grid-cols-2">
               <button
@@ -1303,16 +1504,16 @@ export default function EquityPage() {
 
       <Modal
         open={modalView === 'baseShares'}
-        title={hasBaseShares ? 'Update Base Outstanding Shares' : 'Set Base Outstanding Shares'}
-        description="These shares are used in the fully diluted cap table calculation."
+        title={hasBaseShares ? 'Update Total Available Shares' : 'Set Total Available Shares'}
+        description="This sets the overall capitalization denominator for ownership and valuation reporting."
         onClose={() => setModalView(null)}
       >
         <form className="grid gap-3" onSubmit={onUpdateCapTableBase}>
           <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-            <span>Base Outstanding Shares</span>
+            <span>Total Available Shares</span>
             <input
               name="outstandingShares"
-              defaultValue={capTableView.shares.baseOutstandingShares}
+              defaultValue={capTableView.shares.totalAvailableShares}
               placeholder="10000000"
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
             />
@@ -1322,7 +1523,7 @@ export default function EquityPage() {
             disabled={savingCapTableBase}
             className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:opacity-60"
           >
-            {savingCapTableBase ? 'Saving...' : hasBaseShares ? 'Update Base Shares' : 'Set Base Shares'}
+            {savingCapTableBase ? 'Saving...' : hasBaseShares ? 'Update Total Shares' : 'Set Total Shares'}
           </button>
         </form>
       </Modal>
@@ -1389,7 +1590,7 @@ export default function EquityPage() {
                 onChange={(event) => setGrantForm((prev) => ({ ...prev, planId: event.target.value }))}
                 className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
               >
-                <option value="">No plan selected</option>
+                <option value="">Select management plan</option>
                 {plans.map((plan) => (
                   <option key={plan.id} value={plan.id}>
                     {plan.code} - {plan.name}
@@ -1500,6 +1701,117 @@ export default function EquityPage() {
             <button
               type="button"
               onClick={cancelGrantEdit}
+              className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        open={modalView === 'poolConfig'}
+        title="Pool Configuration"
+        description="Define advisor and management pool sizes, then map plans. Grants are expected to use management plans."
+        onClose={() => setModalView(null)}
+      >
+        <form className="grid gap-3" onSubmit={onSavePoolConfig}>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+              <span>Advisor Pool Shares</span>
+              <input
+                value={poolConfigForm.advisorPoolShares}
+                onChange={(event) =>
+                  setPoolConfigForm((prev) => ({
+                    ...prev,
+                    advisorPoolShares: event.target.value,
+                  }))
+                }
+                placeholder="1000000"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+              />
+            </label>
+            <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+              <span>Management Pool Shares</span>
+              <input
+                value={poolConfigForm.managementPoolShares}
+                onChange={(event) =>
+                  setPoolConfigForm((prev) => ({
+                    ...prev,
+                    managementPoolShares: event.target.value,
+                  }))
+                }
+                placeholder="1000000"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+              />
+            </label>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 p-3">
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Advisor Plans</p>
+            <div className="mt-2 grid gap-2">
+              {plans.length === 0 ? (
+                <p className="text-xs text-slate-500">No plans yet.</p>
+              ) : (
+                plans.map((plan) => (
+                  <label key={`advisor-${plan.id}`} className="inline-flex items-center gap-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={poolConfigForm.advisorPlanIds.includes(plan.id)}
+                      onChange={(event) =>
+                        setPoolConfigForm((prev) => ({
+                          ...prev,
+                          advisorPlanIds: event.target.checked
+                            ? [...prev.advisorPlanIds, plan.id]
+                            : prev.advisorPlanIds.filter((id) => id !== plan.id),
+                        }))
+                      }
+                    />
+                    <span>{plan.code} - {plan.name}</span>
+                  </label>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 p-3">
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Management Plans</p>
+            <div className="mt-2 grid gap-2">
+              {plans.length === 0 ? (
+                <p className="text-xs text-slate-500">No plans yet.</p>
+              ) : (
+                plans.map((plan) => (
+                  <label key={`mgmt-${plan.id}`} className="inline-flex items-center gap-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={poolConfigForm.managementPlanIds.includes(plan.id)}
+                      onChange={(event) =>
+                        setPoolConfigForm((prev) => ({
+                          ...prev,
+                          managementPlanIds: event.target.checked
+                            ? [...prev.managementPlanIds, plan.id]
+                            : prev.managementPlanIds.filter((id) => id !== plan.id),
+                        }))
+                      }
+                    />
+                    <span>{plan.code} - {plan.name}</span>
+                  </label>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="submit"
+              disabled={savingPoolConfig}
+              className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:opacity-60"
+            >
+              {savingPoolConfig ? 'Saving...' : 'Save Pool Configuration'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setModalView(null)}
               className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100"
             >
               Cancel
@@ -1650,6 +1962,20 @@ export default function EquityPage() {
           </div>
 
           <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Common Stock Type</span>
+            <select
+              name="commonStockType"
+              defaultValue="FOUNDER"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+            >
+              <option value="FOUNDER">Founder Common</option>
+              <option value="SAFE">SAFE Conversion</option>
+              <option value="PREFERRED">Preferred Conversion</option>
+              <option value="OTHER">Other Common</option>
+            </select>
+          </label>
+
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
             <span>Reason</span>
             <input
               name="reason"
@@ -1760,6 +2086,23 @@ export default function EquityPage() {
               </select>
             </label>
           </div>
+
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Instrument Type</span>
+            <select
+              name="instrumentType"
+              defaultValue="COMMON_OTHER"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+            >
+              <option value="COMMON_FOUNDER">Common - Founder</option>
+              <option value="COMMON_SAFE">Common - SAFE Conversion</option>
+              <option value="COMMON_PREFERRED">Common - Preferred Conversion</option>
+              <option value="COMMON_OTHER">Common - Other</option>
+              <option value="OPTION_ISO">Option - ISO</option>
+              <option value="OPTION_NSO">Option - NSO</option>
+              <option value="RSU">RSU</option>
+            </select>
+          </label>
 
           <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
             <span>Reason</span>

@@ -1,4 +1,4 @@
-import { IsDateString, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
+import { IsArray, IsDateString, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
 
 const EquityPlanStatusValues = ['DRAFT', 'ACTIVE', 'PAUSED', 'RETIRED'] as const;
 type EquityPlanStatus = (typeof EquityPlanStatusValues)[number];
@@ -42,6 +42,10 @@ export class CreateEquityTransactionDto {
   @IsOptional()
   @IsString()
   reason?: string;
+
+  @IsOptional()
+  @IsString()
+  instrumentType?: string;
 }
 
 const GrantAwardTypeValues = ['OPTION_ISO', 'OPTION_NSO', 'RSU'] as const;
@@ -125,6 +129,24 @@ export class CreateEquityPlanDto {
 export class UpdateCapTableBaseDto {
   @IsString()
   outstandingShares!: string;
+}
+
+export class UpdateCapTablePoolsDto {
+  @IsString()
+  advisorPoolShares!: string;
+
+  @IsString()
+  managementPoolShares!: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsUUID('all', { each: true })
+  advisorPlanIds?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsUUID('all', { each: true })
+  managementPlanIds?: string[];
 }
 
 export class UpdateGrantAwardDto {

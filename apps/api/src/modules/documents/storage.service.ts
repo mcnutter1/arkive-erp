@@ -52,10 +52,43 @@ export class StorageService {
       Bucket: this.bucket,
       Key: key,
       ContentType: mimeType,
+      ContentLength: body.byteLength,
       Body: body,
     });
 
-    await this.client.send(command);
+    try {
+      await this.client.send(command);
+    } catch (directError) {
+      try {
+        const fallbackCommand = new PutObjectCommand({
+          Bucket: this.bucket,
+          Key: key,
+          ContentType: mimeType,
+        });
+        const signedUrl = await getSignedUrl(this.client, fallbackCommand, { expiresIn: 300 });
+        const response = await fetch(signedUrl, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': mimeType,
+          },
+          body: Buffer.from(body),
+        });
+
+        if (!response.ok) {
+          const responseBody = await response.text().catch(() => '');
+          throw new Error(
+            `signed URL PUT failed (${response.status}) ${response.statusText}${
+              responseBody ? `: ${responseBody.slice(0, 240)}` : ''
+            }`,
+          );
+        }
+      } catch (fallbackError) {
+        const directReason = directError instanceof Error ? directError.message : 'unknown direct upload error';
+        const fallbackReason =
+          fallbackError instanceof Error ? fallbackError.message : 'unknown fallback upload error';
+        throw new Error(`direct upload failed (${directReason}); fallback upload failed (${fallbackReason})`);
+      }
+    }
 
     return {
       key,

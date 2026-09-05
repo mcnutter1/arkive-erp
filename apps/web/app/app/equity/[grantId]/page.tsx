@@ -139,8 +139,10 @@ export default function GrantDetailPage() {
   const [savingExercise, setSavingExercise] = useState(false);
   const [savingLetter, setSavingLetter] = useState(false);
   const [savingESign, setSavingESign] = useState(false);
+  const [savingTermination, setSavingTermination] = useState(false);
   const [exerciseModalOpen, setExerciseModalOpen] = useState(false);
   const [vestingModalOpen, setVestingModalOpen] = useState(false);
+  const [terminationModalOpen, setTerminationModalOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -289,6 +291,59 @@ export default function GrantDetailPage() {
     }
   }
 
+  async function recordTermination(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!detail) {
+      return;
+    }
+
+    setSavingTermination(true);
+    setError(null);
+    setNotice(null);
+
+    const form = new FormData(event.currentTarget);
+    const terminatedAtInput = String(form.get('terminatedAt') ?? '').trim();
+    const overrideReason = String(form.get('overrideReason') ?? '').trim();
+    const terminatedAt = /^\d{4}-\d{2}-\d{2}$/.test(terminatedAtInput)
+      ? new Date(`${terminatedAtInput}T00:00:00.000Z`).toISOString()
+      : '';
+
+    if (!terminatedAt) {
+      setError('Termination date is invalid.');
+      setSavingTermination(false);
+      return;
+    }
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/equity/lifecycle/terminations`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          personId: detail.grant.personId,
+          grantId: detail.grant.id,
+          terminatedAt,
+          overrideReason: overrideReason || undefined,
+        }),
+      });
+
+      if (!response.ok) {
+        setError(await readApiError(response, 'Unable to record grant termination.'));
+        return;
+      }
+
+      setTerminationModalOpen(false);
+      setNotice('Grant termination recorded. Unexercised grant amounts are now treated as returned to pool in cap table reporting.');
+      await loadPageData();
+    } catch {
+      setError('Unable to record grant termination.');
+    } finally {
+      setSavingTermination(false);
+    }
+  }
+
   async function generateLetter() {
     if (!detail) {
       return;
@@ -426,6 +481,13 @@ export default function GrantDetailPage() {
               className="rounded-lg bg-slate-900 px-3 py-2 text-sm text-white hover:bg-slate-800"
             >
               New Exercise Request
+            </button>
+            <button
+              type="button"
+              onClick={() => setTerminationModalOpen(true)}
+              className="rounded-lg border border-rose-300 bg-white px-3 py-2 text-sm text-rose-700 hover:bg-rose-50"
+            >
+              Record Termination
             </button>
             <button
               type="button"
@@ -662,6 +724,49 @@ export default function GrantDetailPage() {
             <button
               type="button"
               onClick={() => setVestingModalOpen(false)}
+              className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        open={terminationModalOpen}
+        title="Record Grant Termination"
+        description="Terminate this grant to return unexercised units back to pool reporting."
+        onClose={() => setTerminationModalOpen(false)}
+      >
+        <form className="grid gap-3" onSubmit={recordTermination}>
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Termination Date</span>
+            <input
+              name="terminatedAt"
+              type="date"
+              defaultValue={new Date().toISOString().slice(0, 10)}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            />
+          </label>
+          <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span>Reason</span>
+            <input
+              name="overrideReason"
+              placeholder="Optional termination context"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            />
+          </label>
+          <div className="flex gap-2">
+            <button
+              type="submit"
+              disabled={savingTermination}
+              className="rounded-lg bg-rose-700 px-4 py-2 text-sm text-white hover:bg-rose-800 disabled:opacity-60"
+            >
+              {savingTermination ? 'Recording...' : 'Record Termination'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setTerminationModalOpen(false)}
               className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100"
             >
               Cancel

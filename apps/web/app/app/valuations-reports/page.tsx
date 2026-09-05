@@ -14,18 +14,43 @@ type Valuation = {
   enterpriseValue: string | null;
 };
 
-type CapTableHolding = {
+type CapTableRow = {
   personId: string;
   personName: string;
-  netQuantity: string;
+  shareType: string;
+  sharesOwned: string;
+  ownershipPercent: string;
+  estimatedValue: string;
 };
 
 type CapTableResponse = {
   generatedAt: string;
-  holdings: CapTableHolding[];
+  valuation: {
+    enterpriseValue: string;
+    perShareValue: string;
+    denominatorShares: string;
+  };
+  ownershipTable: CapTableRow[];
 };
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? '/api/v1';
+
+function normalizeNumericInput(value: string): string {
+  return value.trim().replaceAll(',', '');
+}
+
+function toDayStartIso(dateInput: string): string | undefined {
+  const normalized = dateInput.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+    return undefined;
+  }
+
+  const parsed = new Date(`${normalized}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime())) {
+    return undefined;
+  }
+  return parsed.toISOString();
+}
 
 export default function ValuationsReportsPage() {
   const [valuations, setValuations] = useState<Valuation[]>([]);
@@ -41,7 +66,7 @@ export default function ValuationsReportsPage() {
     try {
       const [valuationsResp, capResp] = await Promise.all([
         fetch(`${apiBaseUrl}/valuations`, { credentials: 'include' }),
-        fetch(`${apiBaseUrl}/reports/cap-table-summary`, { credentials: 'include' }),
+        fetch(`${apiBaseUrl}/equity/cap-table`, { credentials: 'include' }),
       ]);
 
       if (!valuationsResp.ok || !capResp.ok) {
@@ -71,9 +96,20 @@ export default function ValuationsReportsPage() {
 
     const form = new FormData(event.currentTarget);
     const valuationType = String(form.get('valuationType') ?? '').trim();
-    const effectiveDate = String(form.get('effectiveDate') ?? '').trim();
-    const commonFmv = String(form.get('commonFmv') ?? '').trim();
-    const enterpriseValue = String(form.get('enterpriseValue') ?? '').trim();
+    const effectiveDateInput = String(form.get('effectiveDate') ?? '').trim();
+    const effectiveDate = toDayStartIso(effectiveDateInput);
+    const commonFmv = normalizeNumericInput(String(form.get('commonFmv') ?? ''));
+    const enterpriseValue = normalizeNumericInput(String(form.get('enterpriseValue') ?? ''));
+
+    if (!valuationType) {
+      setError('Valuation type is required.');
+      return;
+    }
+
+    if (!effectiveDate) {
+      setError('Effective date must be a valid date.');
+      return;
+    }
 
     try {
       const response = await fetch(`${apiBaseUrl}/valuations`, {
@@ -154,17 +190,38 @@ export default function ValuationsReportsPage() {
 
       <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold">Cap Table Summary</h2>
-        {!capTable || capTable.holdings.length === 0 ? (
+        {!capTable || capTable.ownershipTable.length === 0 ? (
           <p className="mt-4 text-sm text-slate-600">No cap table holdings yet.</p>
         ) : (
-          <ul className="mt-3 divide-y divide-slate-200">
-            {capTable.holdings.map((holding) => (
-              <li key={holding.personId} className="py-2 text-sm">
-                <span className="font-medium text-slate-900">{holding.personName}</span>
-                <span className="text-slate-600"> · {holding.netQuantity}</span>
-              </li>
-            ))}
-          </ul>
+          <>
+            <p className="mt-2 text-xs text-slate-500">
+              EV per share ${Number(capTable.valuation.perShareValue).toFixed(6)} using {Number(capTable.valuation.denominatorShares).toLocaleString()} shares.
+            </p>
+            <div className="mt-3 overflow-x-auto">
+              <table className="min-w-full text-left text-sm">
+                <thead className="text-xs uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th className="pb-2 pr-4">Holder</th>
+                    <th className="pb-2 pr-4">Type</th>
+                    <th className="pb-2 pr-4">Shares</th>
+                    <th className="pb-2 pr-4">Ownership %</th>
+                    <th className="pb-2 pr-4">Value</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {capTable.ownershipTable.map((row) => (
+                    <tr key={`${row.personId}-${row.shareType}`} className="border-t border-slate-200">
+                      <td className="py-2 pr-4 font-medium text-slate-900">{row.personName}</td>
+                      <td className="py-2 pr-4 text-slate-700">{row.shareType}</td>
+                      <td className="py-2 pr-4 text-slate-700">{Number(row.sharesOwned).toLocaleString()}</td>
+                      <td className="py-2 pr-4 text-slate-700">{Number(row.ownershipPercent).toFixed(2)}%</td>
+                      <td className="py-2 pr-4 text-slate-700">${Number(row.estimatedValue).toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </article>
 
