@@ -333,6 +333,32 @@ export class CreateEngagementDto {
   endDate?: string;
 }
 
+export class UpdatePersonEngagementDto {
+  @IsOptional()
+  @IsEnum(EngagementStatusValues)
+  status?: EngagementStatus;
+
+  @IsOptional()
+  @IsString()
+  department?: string;
+
+  @IsOptional()
+  @IsString()
+  title?: string;
+
+  @IsOptional()
+  @IsString()
+  startDate?: string;
+
+  @IsOptional()
+  @IsString()
+  endDate?: string;
+
+  @IsOptional()
+  @IsString()
+  workLocation?: string;
+}
+
 export class PeopleQueryDto extends PaginationDto {
   @IsOptional()
   @IsString()

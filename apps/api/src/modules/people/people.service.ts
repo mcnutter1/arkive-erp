@@ -12,6 +12,7 @@ import {
   CreatePersonDto,
   PeopleQueryDto,
   ResetPersonAccountPasswordDto,
+  UpdatePersonEngagementDto,
   UpdatePersonDto,
   UpsertPersonAccountDto,
 } from './dto.js';
@@ -29,6 +30,30 @@ export class PeopleService {
 
   private normalizeRoleCodes(roleCodes: string[]): string[] {
     return [...new Set(roleCodes.map((code) => code.trim().toUpperCase()).filter((code) => RBAC_ROLE_CODES.includes(code)))];
+  }
+
+  private async ensurePersonInOrg(organizationId: string, personId: string) {
+    const person = await this.prisma.person.findFirst({
+      where: {
+        id: personId,
+        organizationId,
+        archivedAt: null,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!person) {
+      throw new NotFoundException('Person not found for this organization');
+    }
+  }
+
+  private decimalToString(value: Prisma.Decimal | null | undefined): string | null {
+    if (!value) {
+      return null;
+    }
+    return value.toString();
   }
 
   private parseOptionalDate(value: string | undefined, fieldName: string): Date | undefined {
@@ -317,7 +342,7 @@ export class PeopleService {
 
     if (engagementCount > 0 || grantCount > 0 || exerciseCount > 0 || documentCount > 0 || signatureCount > 0 || jobCount > 0) {
       throw new BadRequestException(
-        'Person cannot be deleted because related records exist. Archive the person and retain linked history.',
+        'Person cannot be deleted because related records exist. Open the person details page to review and remediate linked history before deletion.',
       );
     }
 
@@ -379,6 +404,430 @@ export class PeopleService {
     } catch (error) {
       this.normalizePrismaError(error);
     }
+  }
+
+  async getPersonDetails(actor: AuthenticatedUser, personId: string) {
+    await this.ensurePersonInOrg(actor.organizationId, personId);
+
+    const [person, engagements, documents, grants, exerciseRequests, signatures, provisioningJobs] =
+      await Promise.all([
+        this.prisma.person.findFirst({
+          where: {
+            id: personId,
+            organizationId: actor.organizationId,
+            archivedAt: null,
+          },
+          select: {
+            id: true,
+            legalFirstName: true,
+            legalLastName: true,
+            preferredName: true,
+            primaryEmail: true,
+            businessEmail: true,
+            classification: true,
+            employmentStatus: true,
+            timezone: true,
+            user: {
+              select: {
+                id: true,
+                email: true,
+                status: true,
+                localUsername: true,
+                microsoftUserId: true,
+                userRoles: {
+                  where: {
+                    OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+                  },
+                  select: {
+                    role: {
+                      select: {
+                        code: true,
+                        name: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        }),
+        this.prisma.engagement.findMany({
+          where: {
+            organizationId: actor.organizationId,
+            personId,
+            archivedAt: null,
+          },
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            kind: true,
+            status: true,
+            title: true,
+            department: true,
+            startDate: true,
+            endDate: true,
+            workLocation: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        }),
+        this.prisma.document.findMany({
+          where: {
+            organizationId: actor.organizationId,
+            personId,
+            archivedAt: null,
+          },
+          orderBy: { updatedAt: 'desc' },
+          select: {
+            id: true,
+            title: true,
+            category: true,
+            status: true,
+            legalHold: true,
+            createdAt: true,
+            updatedAt: true,
+            _count: {
+              select: {
+                signatures: true,
+              },
+            },
+          },
+        }),
+        this.prisma.grantAward.findMany({
+          where: {
+            organizationId: actor.organizationId,
+            personId,
+          },
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            awardType: true,
+            quantity: true,
+            status: true,
+            grantDate: true,
+            expirationDate: true,
+            createdAt: true,
+            plan: {
+              select: {
+                id: true,
+                code: true,
+                name: true,
+              },
+            },
+          },
+        }),
+        this.prisma.exerciseRequest.findMany({
+          where: {
+            organizationId: actor.organizationId,
+            personId,
+          },
+          orderBy: { requestedAt: 'desc' },
+          select: {
+            id: true,
+            grantId: true,
+            quantity: true,
+            status: true,
+            requestedAt: true,
+            approvedAt: true,
+            completedAt: true,
+            notes: true,
+          },
+        }),
+        this.prisma.signatureParticipant.findMany({
+          where: {
+            organizationId: actor.organizationId,
+            personId,
+          },
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            role: true,
+            status: true,
+            signingOrder: true,
+            signedAt: true,
+            createdAt: true,
+            signatureRequest: {
+              select: {
+                id: true,
+                title: true,
+                status: true,
+                createdAt: true,
+              },
+            },
+          },
+        }),
+        this.prisma.m365ProvisioningJob.findMany({
+          where: {
+            organizationId: actor.organizationId,
+            personId,
+          },
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            operation: true,
+            status: true,
+            requestedUsername: true,
+            requestedEmail: true,
+            attempts: true,
+            lastError: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        }),
+      ]);
+
+    if (!person) {
+      throw new NotFoundException('Person not found for this organization');
+    }
+
+    const blockers = {
+      engagements: engagements.length,
+      grants: grants.length,
+      exerciseRequests: exerciseRequests.length,
+      documents: documents.length,
+      signatureParticipants: signatures.length,
+      provisioningJobs: provisioningJobs.length,
+    };
+
+    return {
+      person: {
+        id: person.id,
+        legalFirstName: person.legalFirstName,
+        legalLastName: person.legalLastName,
+        preferredName: person.preferredName,
+        primaryEmail: person.primaryEmail,
+        businessEmail: person.businessEmail,
+        classification: person.classification,
+        employmentStatus: person.employmentStatus,
+        timezone: person.timezone,
+      },
+      account: person.user
+        ? {
+            id: person.user.id,
+            email: person.user.email,
+            status: person.user.status,
+            localUsername: person.user.localUsername,
+            microsoftUserId: person.user.microsoftUserId,
+            roleCodes: person.user.userRoles.map((item) => item.role.code),
+            roleNames: person.user.userRoles.map((item) => item.role.name),
+          }
+        : null,
+      blockers,
+      canDeletePerson: Object.values(blockers).every((count) => count === 0),
+      related: {
+        engagements,
+        documents: documents.map((document) => ({
+          id: document.id,
+          title: document.title,
+          category: document.category,
+          status: document.status,
+          legalHold: document.legalHold,
+          signatureRequestCount: document._count.signatures,
+          canArchive: !document.legalHold && document._count.signatures === 0,
+          createdAt: document.createdAt,
+          updatedAt: document.updatedAt,
+        })),
+        grants: grants.map((grant) => ({
+          id: grant.id,
+          awardType: grant.awardType,
+          quantity: this.decimalToString(grant.quantity),
+          status: grant.status,
+          grantDate: grant.grantDate,
+          expirationDate: grant.expirationDate,
+          createdAt: grant.createdAt,
+          plan: grant.plan,
+        })),
+        exerciseRequests: exerciseRequests.map((item) => ({
+          id: item.id,
+          grantId: item.grantId,
+          quantity: this.decimalToString(item.quantity),
+          status: item.status,
+          requestedAt: item.requestedAt,
+          approvedAt: item.approvedAt,
+          completedAt: item.completedAt,
+          notes: item.notes,
+        })),
+        signatureParticipants: signatures,
+        provisioningJobs: provisioningJobs.map((job) => ({
+          ...job,
+          canRemove: job.status === 'DRAFT' || job.status === 'FAILED' || job.status === 'CANCELED',
+        })),
+      },
+    };
+  }
+
+  async updatePersonEngagement(
+    actor: AuthenticatedUser,
+    personId: string,
+    engagementId: string,
+    dto: UpdatePersonEngagementDto,
+  ) {
+    await this.ensurePersonInOrg(actor.organizationId, personId);
+
+    const engagement = await this.prisma.engagement.findFirst({
+      where: {
+        id: engagementId,
+        organizationId: actor.organizationId,
+        personId,
+        archivedAt: null,
+      },
+      select: {
+        id: true,
+        startDate: true,
+        endDate: true,
+      },
+    });
+
+    if (!engagement) {
+      throw new NotFoundException('Engagement not found for this person');
+    }
+
+    const parsedStart = this.parseOptionalDate(dto.startDate, 'start date');
+    const parsedEnd = this.parseOptionalDate(dto.endDate, 'end date');
+    const nextStart = dto.startDate !== undefined ? parsedStart : engagement.startDate;
+    const nextEnd = dto.endDate !== undefined ? parsedEnd : engagement.endDate;
+
+    if (nextStart && nextEnd && nextEnd.getTime() < nextStart.getTime()) {
+      throw new BadRequestException('End date cannot be earlier than start date');
+    }
+
+    const updateData: Prisma.EngagementUpdateInput = {
+      ...(dto.status !== undefined ? { status: dto.status } : {}),
+      ...(dto.department !== undefined ? { department: dto.department.trim() || null } : {}),
+      ...(dto.title !== undefined ? { title: dto.title.trim() || null } : {}),
+      ...(dto.workLocation !== undefined ? { workLocation: dto.workLocation.trim() || null } : {}),
+      ...(dto.startDate !== undefined ? { startDate: parsedStart ?? null } : {}),
+      ...(dto.endDate !== undefined ? { endDate: parsedEnd ?? null } : {}),
+    };
+
+    try {
+      return await this.prisma.engagement.update({
+        where: {
+          id: engagementId,
+        },
+        data: updateData,
+      });
+    } catch (error) {
+      this.normalizePrismaError(error);
+    }
+  }
+
+  async removePersonEngagement(actor: AuthenticatedUser, personId: string, engagementId: string) {
+    await this.ensurePersonInOrg(actor.organizationId, personId);
+
+    const engagement = await this.prisma.engagement.findFirst({
+      where: {
+        id: engagementId,
+        organizationId: actor.organizationId,
+        personId,
+        archivedAt: null,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!engagement) {
+      throw new NotFoundException('Engagement not found for this person');
+    }
+
+    await this.prisma.engagement.update({
+      where: {
+        id: engagement.id,
+      },
+      data: {
+        archivedAt: new Date(),
+      },
+    });
+
+    return {
+      id: engagement.id,
+      archived: true,
+    };
+  }
+
+  async archivePersonDocument(actor: AuthenticatedUser, personId: string, documentId: string) {
+    await this.ensurePersonInOrg(actor.organizationId, personId);
+
+    const document = await this.prisma.document.findFirst({
+      where: {
+        id: documentId,
+        organizationId: actor.organizationId,
+        personId,
+        archivedAt: null,
+      },
+      select: {
+        id: true,
+        legalHold: true,
+        _count: {
+          select: {
+            signatures: true,
+          },
+        },
+      },
+    });
+
+    if (!document) {
+      throw new NotFoundException('Document not found for this person');
+    }
+
+    if (document.legalHold) {
+      throw new BadRequestException('Document is under legal hold and cannot be archived');
+    }
+
+    if (document._count.signatures > 0) {
+      throw new BadRequestException('Document is tied to signature requests and cannot be archived from this view');
+    }
+
+    await this.prisma.document.update({
+      where: {
+        id: document.id,
+      },
+      data: {
+        status: 'ARCHIVED',
+        archivedAt: new Date(),
+      },
+    });
+
+    return {
+      id: document.id,
+      archived: true,
+    };
+  }
+
+  async removeProvisioningJob(actor: AuthenticatedUser, personId: string, jobId: string) {
+    await this.ensurePersonInOrg(actor.organizationId, personId);
+
+    const job = await this.prisma.m365ProvisioningJob.findFirst({
+      where: {
+        id: jobId,
+        organizationId: actor.organizationId,
+        personId,
+      },
+      select: {
+        id: true,
+        status: true,
+      },
+    });
+
+    if (!job) {
+      throw new NotFoundException('Provisioning job not found for this person');
+    }
+
+    if (job.status === 'QUEUED' || job.status === 'RUNNING' || job.status === 'SUCCESS') {
+      throw new BadRequestException('Only draft, failed, or canceled jobs can be removed from this view');
+    }
+
+    await this.prisma.m365ProvisioningJob.delete({
+      where: {
+        id: job.id,
+      },
+    });
+
+    return {
+      id: job.id,
+      removed: true,
+    };
   }
 
   async getPersonAccount(actor: AuthenticatedUser, personId: string) {

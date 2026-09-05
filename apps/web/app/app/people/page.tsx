@@ -1,5 +1,6 @@
 "use client";
 
+import Link from 'next/link';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 
 import { Modal } from '../_components/modal';
@@ -1042,6 +1043,12 @@ export default function PeoplePage() {
                         >
                           Edit
                         </button>
+                        <Link
+                          href={`/app/people/${person.id}`}
+                          className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-700 hover:bg-slate-50"
+                        >
+                          Details
+                        </Link>
                         <button
                           type="button"
                           onClick={() => void openAccountModal(person.id)}

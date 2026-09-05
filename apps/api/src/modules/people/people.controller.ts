@@ -10,6 +10,7 @@ import {
   CreatePersonDto,
   PeopleQueryDto,
   ResetPersonAccountPasswordDto,
+  UpdatePersonEngagementDto,
   UpdatePersonDto,
   UpsertPersonAccountDto,
 } from './dto.js';
@@ -52,6 +53,53 @@ export class PeopleController {
   @RequirePermissions('people.write')
   createEngagement(@CurrentUser() actor: AuthenticatedUser, @Body() dto: CreateEngagementDto) {
     return this.peopleService.createEngagement(actor, dto);
+  }
+
+  @Get(':personId/details')
+  @RequirePermissions('people.read')
+  getPersonDetails(@CurrentUser() actor: AuthenticatedUser, @Param('personId') personId: string) {
+    return this.peopleService.getPersonDetails(actor, personId);
+  }
+
+  @Patch(':personId/engagements/:engagementId')
+  @RequirePermissions('people.write')
+  updatePersonEngagement(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('personId') personId: string,
+    @Param('engagementId') engagementId: string,
+    @Body() dto: UpdatePersonEngagementDto,
+  ) {
+    return this.peopleService.updatePersonEngagement(actor, personId, engagementId, dto);
+  }
+
+  @Delete(':personId/engagements/:engagementId')
+  @RequirePermissions('people.write')
+  removePersonEngagement(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('personId') personId: string,
+    @Param('engagementId') engagementId: string,
+  ) {
+    return this.peopleService.removePersonEngagement(actor, personId, engagementId);
+  }
+
+  @Delete(':personId/documents/:documentId')
+  @RequirePermissions('people.write')
+  archivePersonDocument(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('personId') personId: string,
+    @Param('documentId') documentId: string,
+  ) {
+    return this.peopleService.archivePersonDocument(actor, personId, documentId);
+  }
+
+  @Delete(':personId/provisioning-jobs/:jobId')
+  @RequirePermissions('people.write')
+  removeProvisioningJob(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('personId') personId: string,
+    @Param('jobId') jobId: string,
+  ) {
+    return this.peopleService.removeProvisioningJob(actor, personId, jobId);
   }
 
   @Get(':personId/account')
