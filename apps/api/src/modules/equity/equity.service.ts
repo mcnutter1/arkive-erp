@@ -66,6 +66,8 @@ type PersonWorkInfo = {
   companySignatory: boolean;
 };
 
+type GrantPoolType = 'advisor' | 'management' | 'advisor+management' | 'unconfigured';
+
 @Injectable()
 export class EquityService {
   constructor(
@@ -165,6 +167,45 @@ export class EquityService {
           profile.company_signatory,
       ),
     };
+  }
+
+  private classifyGrantPool(planId: string, poolConfig: CapTablePoolConfig): GrantPoolType {
+    const inAdvisorPool = poolConfig.advisorPlanIds.has(planId);
+    const inManagementPool = poolConfig.managementPlanIds.has(planId);
+
+    if (inAdvisorPool && inManagementPool) {
+      return 'advisor+management';
+    }
+
+    if (inAdvisorPool) {
+      return 'advisor';
+    }
+
+    if (inManagementPool) {
+      return 'management';
+    }
+
+    return 'unconfigured';
+  }
+
+  private assertGrantPoolPlanSelection(planId: string | undefined, poolConfig: CapTablePoolConfig): string {
+    if (!planId) {
+      throw new BadRequestException('Grants must be assigned to a configured advisor or management equity pool plan');
+    }
+
+    const hasConfiguredPoolPlans =
+      poolConfig.advisorPlanIds.size > 0 || poolConfig.managementPlanIds.size > 0;
+
+    if (!hasConfiguredPoolPlans) {
+      return planId;
+    }
+
+    const poolType = this.classifyGrantPool(planId, poolConfig);
+    if (poolType === 'unconfigured') {
+      throw new BadRequestException('Selected plan is not configured as an advisor or management equity pool');
+    }
+
+    return planId;
   }
 
   private readTransactionInstrumentType(
@@ -2088,14 +2129,7 @@ export class EquityService {
 
     const planId = dto.planId?.trim() || undefined;
     const poolConfig = await this.getCapTablePoolConfig(actor.organizationId);
-
-    if (!planId) {
-      throw new BadRequestException('Grants must be assigned to a management equity pool plan');
-    }
-
-    if (poolConfig.managementPlanIds.size > 0 && !poolConfig.managementPlanIds.has(planId)) {
-      throw new BadRequestException('Selected plan is not configured as a management equity pool');
-    }
+    const selectedPlanId = this.assertGrantPoolPlanSelection(planId, poolConfig);
 
     const isOption = dto.awardType === 'OPTION_ISO' || dto.awardType === 'OPTION_NSO';
     const exercisePrice = dto.exercisePrice
@@ -2120,9 +2154,7 @@ export class EquityService {
     }
 
     return this.prisma.$transaction(async (tx) => {
-      if (planId) {
-        await this.assertPlanCapacity(tx, actor.organizationId, planId, quantity);
-      }
+      await this.assertPlanCapacity(tx, actor.organizationId, selectedPlanId, quantity);
 
       const seq = await tx.equityTransaction.aggregate({
         where: { organizationId: actor.organizationId },
@@ -2134,7 +2166,7 @@ export class EquityService {
         data: {
           organizationId: actor.organizationId,
           personId: dto.personId,
-          planId,
+          planId: selectedPlanId,
           awardType: dto.awardType,
           quantity,
           exercisePrice: isOption ? exercisePrice : undefined,
@@ -2159,7 +2191,7 @@ export class EquityService {
       await tx.equityTransaction.create({
         data: {
           organizationId: actor.organizationId,
-          planId,
+          planId: selectedPlanId,
           grantId: grant.id,
           type: 'GRANT',
           effectiveAt: grantDate,
@@ -2271,16 +2303,9 @@ export class EquityService {
 
     const planId = dto.planId?.trim() || undefined;
     const poolConfig = await this.getCapTablePoolConfig(actor.organizationId);
+    const selectedPlanId = this.assertGrantPoolPlanSelection(planId, poolConfig);
 
-    if (!planId) {
-      throw new BadRequestException('Grants must be assigned to a management equity pool plan');
-    }
-
-    if (poolConfig.managementPlanIds.size > 0 && !poolConfig.managementPlanIds.has(planId)) {
-      throw new BadRequestException('Selected plan is not configured as a management equity pool');
-    }
-
-    await this.ensurePlanInOrg(actor.organizationId, planId);
+    await this.ensurePlanInOrg(actor.organizationId, selectedPlanId);
 
     const isOption = dto.awardType === 'OPTION_ISO' || dto.awardType === 'OPTION_NSO';
     const exercisePrice = dto.exercisePrice
@@ -2305,9 +2330,7 @@ export class EquityService {
     }
 
     return this.prisma.$transaction(async (tx) => {
-      if (planId) {
-        await this.assertPlanCapacity(tx, actor.organizationId, planId, quantity, grantId);
-      }
+      await this.assertPlanCapacity(tx, actor.organizationId, selectedPlanId, quantity, grantId);
 
       const updatedGrant = await tx.grantAward.update({
         where: {
@@ -2315,7 +2338,7 @@ export class EquityService {
         },
         data: {
           personId: dto.personId,
-          planId,
+          planId: selectedPlanId,
           awardType: dto.awardType,
           quantity,
           exercisePrice: isOption ? exercisePrice : null,
@@ -2358,7 +2381,7 @@ export class EquityService {
           type: 'GRANT',
         },
         data: {
-          planId,
+          planId: selectedPlanId,
           toPersonId: dto.personId,
           quantity,
           unitPrice: isOption ? exercisePrice : null,

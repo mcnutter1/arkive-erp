@@ -432,6 +432,32 @@ export default function EquityPage() {
     };
 
   const hasBaseShares = Number(capTableView.shares.totalAvailableShares) > 0;
+  const advisorPoolPlanIds = useMemo(() => new Set(capTableView.pools.advisor.planIds), [capTableView.pools.advisor.planIds]);
+  const managementPoolPlanIds = useMemo(
+    () => new Set(capTableView.pools.management.planIds),
+    [capTableView.pools.management.planIds],
+  );
+  const configuredPoolPlanIds = useMemo(
+    () => new Set([...advisorPoolPlanIds, ...managementPoolPlanIds]),
+    [advisorPoolPlanIds, managementPoolPlanIds],
+  );
+  const availableGrantPlans = useMemo(() => {
+    if (configuredPoolPlanIds.size === 0) {
+      return plans;
+    }
+
+    const configured = plans.filter((plan) => configuredPoolPlanIds.has(plan.id));
+    if (!grantForm.planId || configured.some((plan) => plan.id === grantForm.planId)) {
+      return configured;
+    }
+
+    const selectedPlan = plans.find((plan) => plan.id === grantForm.planId);
+    if (!selectedPlan) {
+      return configured;
+    }
+
+    return [selectedPlan, ...configured];
+  }, [configuredPoolPlanIds, grantForm.planId, plans]);
 
   async function loadData() {
     setLoading(true);
@@ -590,7 +616,7 @@ export default function EquityPage() {
     }
 
     if (!grantForm.planId) {
-      setError('Select a management pool plan for this grant.');
+      setError('Select an advisor or management pool plan for this grant.');
       setSavingGrant(false);
       return;
     }
@@ -1622,13 +1648,31 @@ export default function EquityPage() {
                 onChange={(event) => setGrantForm((prev) => ({ ...prev, planId: event.target.value }))}
                 className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
               >
-                <option value="">Select management plan</option>
-                {plans.map((plan) => (
-                  <option key={plan.id} value={plan.id}>
-                    {plan.code} - {plan.name}
-                  </option>
-                ))}
+                <option value="">Select advisor or management plan</option>
+                {availableGrantPlans.map((plan) => {
+                  const inAdvisorPool = advisorPoolPlanIds.has(plan.id);
+                  const inManagementPool = managementPoolPlanIds.has(plan.id);
+                  const poolLabel = inAdvisorPool
+                    ? inManagementPool
+                      ? 'Advisor + Management'
+                      : 'Advisor'
+                    : inManagementPool
+                      ? 'Management'
+                      : 'Unmapped';
+
+                  return (
+                    <option key={plan.id} value={plan.id}>
+                      {plan.code} - {plan.name}
+                      {configuredPoolPlanIds.size > 0 ? ` (${poolLabel})` : ''}
+                    </option>
+                  );
+                })}
               </select>
+              {configuredPoolPlanIds.size > 0 && availableGrantPlans.length === 0 ? (
+                <p className="text-[11px] normal-case tracking-normal text-amber-700">
+                  No plans are mapped to advisor or management pools. Update Pool Configuration first.
+                </p>
+              ) : null}
             </label>
 
             <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
@@ -1747,7 +1791,7 @@ export default function EquityPage() {
       <Modal
         open={modalView === 'poolConfig'}
         title="Pool Configuration"
-        description="Define advisor and management pool sizes, then map plans. Grants are expected to use management plans."
+        description="Define advisor and management pool sizes, then map plans. Grants can use either advisor or management plans."
         onClose={() => setModalView(null)}
       >
         <form className="grid gap-3" onSubmit={onSavePoolConfig}>
