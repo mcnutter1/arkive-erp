@@ -81,13 +81,22 @@ type LetterPayload = {
   title: string;
   fileName: string;
   mimeType: string;
-  content: string;
+  contentBase64: string;
+  previewText: string;
   defaultParticipants: Array<{
     personId: string;
     role: string;
     signingOrder: number;
   }>;
   eSignConfigured: boolean;
+};
+
+type ESignPackageResponse = {
+  emailInvites?: {
+    total: number;
+    sent: number;
+    failed: number;
+  };
 };
 
 type PeopleResponse = {
@@ -115,14 +124,6 @@ function formatShares(value: string | null | undefined): string {
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   });
-}
-
-async function sha256HexBlob(blob: Blob): Promise<string> {
-  const buffer = await blob.arrayBuffer();
-  const digest = await crypto.subtle.digest('SHA-256', buffer);
-  return Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
 }
 
 export default function GrantDetailPage() {
@@ -328,11 +329,17 @@ export default function GrantDetailPage() {
       return;
     }
 
-    const blob = new Blob([letter.content], { type: letter.mimeType || 'text/markdown' });
+    const decoded = atob(letter.contentBase64);
+    const bytes = new Uint8Array(decoded.length);
+    for (let i = 0; i < decoded.length; i += 1) {
+      bytes[i] = decoded.charCodeAt(i);
+    }
+
+    const blob = new Blob([bytes], { type: letter.mimeType || 'application/pdf' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = letter.fileName || 'grant-letter.md';
+    anchor.download = letter.fileName || 'grant-letter.pdf';
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
@@ -359,106 +366,33 @@ export default function GrantDetailPage() {
     setNotice(null);
 
     try {
-      const letterBlob = new Blob([letter.content], { type: letter.mimeType || 'text/markdown' });
-
-      const createDocResp = await fetch(`${apiBaseUrl}/documents`, {
+      const packageResp = await fetch(`${apiBaseUrl}/equity/grants/${grantId}/esign-package`, {
         method: 'POST',
         credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          title: letter.title,
-          category: 'grant-letter',
-          personId: detail.grant.personId,
+          signatoryPersonId,
         }),
       });
 
-      if (!createDocResp.ok) {
-        setError(await readApiError(createDocResp, 'Unable to create grant-letter document.'));
+      if (!packageResp.ok) {
+        setError(await readApiError(packageResp, 'Unable to create e-sign package for grant letter.'));
         return;
       }
 
-      const documentPayload = (await createDocResp.json()) as { id: string };
+      const packagePayload = (await packageResp.json()) as ESignPackageResponse;
+      const inviteSummary = packagePayload.emailInvites;
 
-      const uploadUrlResp = await fetch(`${apiBaseUrl}/documents/upload-url`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ mimeType: letter.mimeType || 'text/markdown', byteSize: letterBlob.size }),
-      });
-
-      if (!uploadUrlResp.ok) {
-        setError(await readApiError(uploadUrlResp, 'Unable to create upload URL for grant letter.'));
-        return;
-      }
-
-      const uploadPayload = (await uploadUrlResp.json()) as { key: string; url: string };
-      const putResp = await fetch(uploadPayload.url, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': letter.mimeType || 'text/markdown',
-        },
-        body: letterBlob,
-      });
-
-      if (!putResp.ok) {
-        setError('Grant-letter file upload failed.');
-        return;
-      }
-
-      const hash = await sha256HexBlob(letterBlob);
-      const finalizeResp = await fetch(`${apiBaseUrl}/documents/${documentPayload.id}/versions`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          storageKey: uploadPayload.key,
-          sha256: hash,
-          mimeType: letter.mimeType || 'text/markdown',
-          byteSize: letterBlob.size,
-        }),
-      });
-
-      if (!finalizeResp.ok) {
-        setError(await readApiError(finalizeResp, 'Unable to finalize grant-letter version.'));
-        return;
-      }
-
-      const versionPayload = (await finalizeResp.json()) as { id: string };
-
-      const signatureResp = await fetch(`${apiBaseUrl}/signatures/requests`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          documentId: documentPayload.id,
-          documentVersionId: versionPayload.id,
-          title: `${letter.title} - Signature Packet`,
-          signingOrderRequired: true,
-          participants: [
-            {
-              personId: detail.grant.personId,
-              role: 'Recipient',
-              signingOrder: 1,
-            },
-            {
-              personId: signatoryPersonId,
-              role: 'Company Signatory',
-              signingOrder: 2,
-            },
-          ],
-        }),
-      });
-
-      if (!signatureResp.ok) {
-        setError(await readApiError(signatureResp, 'Unable to create e-sign request.'));
+      if (inviteSummary) {
+        const emailMessage = `${inviteSummary.sent}/${inviteSummary.total} invite email${inviteSummary.total === 1 ? '' : 's'} sent`;
+        if (inviteSummary.failed > 0) {
+          setError(`E-sign packet was created, but ${inviteSummary.failed} invite email${inviteSummary.failed === 1 ? '' : 's'} failed to send.`);
+          setNotice(`Grant letter packet created. ${emailMessage}; ${inviteSummary.failed} failed. Signers can still access Portal.`);
+          return;
+        }
+        setNotice(`Grant letter packet created. ${emailMessage}.`);
         return;
       }
 
@@ -612,14 +546,14 @@ export default function GrantDetailPage() {
       <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold">Grant Letter and E-Sign</h2>
         <p className="mt-1 text-sm text-slate-600">
-          Generate a letter for this grant, then create a document and signature request packet.
+          Generate a PDF letter for this grant, then create a document and signature request packet.
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
           <button type="button" onClick={() => void generateLetter()} disabled={savingLetter} className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:opacity-60">
             {savingLetter ? 'Generating...' : 'Generate Grant Letter'}
           </button>
           <button type="button" onClick={downloadLetter} disabled={!letter} className="rounded-lg border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60">
-            Download Letter
+            Download Letter PDF
           </button>
         </div>
 
@@ -650,7 +584,8 @@ export default function GrantDetailPage() {
                 </button>
               </div>
             </div>
-            <textarea value={letter.content} readOnly className="mt-4 min-h-64 w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 font-mono text-xs text-slate-700" />
+            <p className="mt-4 text-xs text-slate-500">Preview text used to generate the PDF:</p>
+            <textarea value={letter.previewText} readOnly className="mt-2 min-h-64 w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 font-mono text-xs text-slate-700" />
           </>
         ) : null}
       </article>

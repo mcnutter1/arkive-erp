@@ -179,6 +179,15 @@ export class UpdateGrantAwardDto {
   notes?: string;
 }
 
+export class CreateGrantESignPackageDto {
+  @IsUUID()
+  signatoryPersonId!: string;
+
+  @IsOptional()
+  @IsDateString()
+  expiresAt?: string;
+}
+
 export class UpdateEquityPlanDto {
   @IsString()
   name!: string;

@@ -1,11 +1,15 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { SendEmailCommand, SESClient } from '@aws-sdk/client-ses';
 import { Prisma } from '@prisma/client';
 import { Decimal } from 'decimal.js';
+import { PDFDocument, PDFFont, PDFPage, StandardFonts, rgb } from 'pdf-lib';
 
 import { AuthenticatedUser } from '../auth/auth.types.js';
 import { PrismaService } from '../common/prisma.service.js';
+import { StorageService } from '../documents/storage.service.js';
 import { VestingService } from '../vesting/vesting.service.js';
 import {
+  CreateGrantESignPackageDto,
   CreateEquityPlanDto,
   CreateEquityTransactionDto,
   CreateGrantAwardDto,
@@ -14,11 +18,32 @@ import {
   UpdateGrantAwardDto,
 } from './dto.js';
 
+export type GrantESignCaptureContext = {
+  ipAddress?: string;
+  userAgent?: string;
+  localeHint?: string;
+};
+
+type GrantLetterPayload = {
+  title: string;
+  fileName: string;
+  mimeType: string;
+  contentBase64: string;
+  previewText: string;
+  defaultParticipants: Array<{
+    personId: string;
+    role: string;
+    signingOrder: number;
+  }>;
+  eSignConfigured: boolean;
+};
+
 @Injectable()
 export class EquityService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly vestingService: VestingService,
+    private readonly storage: StorageService,
   ) {}
 
   private parseSettingObject(value: unknown): Record<string, unknown> {
@@ -40,6 +65,19 @@ export class EquityService {
       return value !== 0;
     }
     return false;
+  }
+
+  private normalizeLocaleTag(input?: string): string | undefined {
+    if (!input) {
+      return undefined;
+    }
+
+    const normalized = input.trim().replaceAll('_', '-');
+    if (!normalized) {
+      return undefined;
+    }
+
+    return normalized.slice(0, 40);
   }
 
   private decimal(value: Decimal | string | number | null | undefined): Decimal {
@@ -630,7 +668,294 @@ export class EquityService {
     };
   }
 
-  async generateGrantLetter(actor: AuthenticatedUser, grantId: string) {
+  private asNonEmptyString(value: unknown): string | undefined {
+    if (typeof value !== 'string') {
+      return undefined;
+    }
+
+    const normalized = value.trim();
+    return normalized || undefined;
+  }
+
+  private wrapTextForPdf(text: string, font: PDFFont, fontSize: number, maxWidth: number): string[] {
+    const normalized = text.trim();
+    if (!normalized) {
+      return [''];
+    }
+
+    if (font.widthOfTextAtSize(normalized, fontSize) <= maxWidth) {
+      return [normalized];
+    }
+
+    const words = normalized.split(/\s+/).filter(Boolean);
+    if (words.length === 0) {
+      return [''];
+    }
+
+    const segments: string[] = [];
+    let current = words[0] ?? '';
+
+    for (let i = 1; i < words.length; i += 1) {
+      const nextWord = words[i] ?? '';
+      const candidate = `${current} ${nextWord}`;
+      if (font.widthOfTextAtSize(candidate, fontSize) <= maxWidth) {
+        current = candidate;
+        continue;
+      }
+
+      segments.push(current);
+      current = nextWord;
+    }
+
+    if (current) {
+      segments.push(current);
+    }
+
+    return segments;
+  }
+
+  private async renderGrantLetterPdf(lines: string[]): Promise<Uint8Array> {
+    const pdf = await PDFDocument.create();
+    const bodyFont = await pdf.embedFont(StandardFonts.Helvetica);
+    const headingFont = await pdf.embedFont(StandardFonts.HelveticaBold);
+
+    const pageWidth = 612;
+    const pageHeight = 792;
+    const margin = 54;
+    const maxLineWidth = pageWidth - margin * 2;
+
+    let page: PDFPage = pdf.addPage([pageWidth, pageHeight]);
+    let cursorY = pageHeight - margin;
+
+    const drawWrappedLine = (text: string, font: PDFFont, fontSize: number) => {
+      const wrapped = this.wrapTextForPdf(text, font, fontSize, maxLineWidth);
+      for (const line of wrapped) {
+        if (cursorY < margin + fontSize * 1.6) {
+          page = pdf.addPage([pageWidth, pageHeight]);
+          cursorY = pageHeight - margin;
+        }
+
+        page.drawText(line, {
+          x: margin,
+          y: cursorY,
+          size: fontSize,
+          font,
+          color: rgb(0.12, 0.15, 0.2),
+        });
+        cursorY -= fontSize * 1.45;
+      }
+    };
+
+    for (const sourceLine of lines) {
+      const line = sourceLine.trimEnd();
+      if (!line.trim()) {
+        cursorY -= 8;
+        continue;
+      }
+
+      let font = bodyFont;
+      let fontSize = 11;
+      let text = line;
+
+      if (line.startsWith('# ')) {
+        font = headingFont;
+        fontSize = 18;
+        text = line.slice(2).trim();
+      } else if (line.startsWith('## ')) {
+        font = headingFont;
+        fontSize = 14;
+        text = line.slice(3).trim();
+      } else if (line.startsWith('### ')) {
+        font = headingFont;
+        fontSize = 12;
+        text = line.slice(4).trim();
+      } else if (line.startsWith('_') && line.endsWith('_')) {
+        fontSize = 10;
+        text = line.slice(1, -1).trim();
+      }
+
+      drawWrappedLine(text, font, fontSize);
+      cursorY -= line.startsWith('# ') ? 6 : 2;
+    }
+
+    return pdf.save();
+  }
+
+  private buildPortalSigningUrl(participantId: string): string {
+    const configured = this.asNonEmptyString(process.env.APP_BASE_URL);
+    const corsOrigin = this.asNonEmptyString(process.env.API_CORS_ORIGIN?.split(',')[0]);
+    const baseUrl = (configured ?? corsOrigin ?? 'http://localhost:3000').replace(/\/+$/, '');
+    return `${baseUrl}/app/portal?participantId=${encodeURIComponent(participantId)}`;
+  }
+
+  private async sendGrantPacketInviteEmails(actor: AuthenticatedUser, signatureRequestId: string, title: string) {
+    const participants = await this.prisma.signatureParticipant.findMany({
+      where: {
+        organizationId: actor.organizationId,
+        signatureRequestId,
+      },
+      include: {
+        person: {
+          select: {
+            id: true,
+            legalFirstName: true,
+            legalLastName: true,
+            primaryEmail: true,
+            businessEmail: true,
+            user: {
+              select: {
+                email: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: { signingOrder: 'asc' },
+    });
+
+    const sesSetting = await this.prisma.systemSetting.findFirst({
+      where: {
+        organizationId: actor.organizationId,
+        section: 'integrations',
+        key: 'awsSes',
+      },
+      select: {
+        value: true,
+      },
+    });
+
+    const sesConfig = this.parseSettingObject(sesSetting?.value);
+    const fromEmail = this.asNonEmptyString(sesConfig.fromEmail);
+    const replyToEmail = this.asNonEmptyString(sesConfig.replyToEmail);
+    const region =
+      this.asNonEmptyString(sesConfig.region) ??
+      this.asNonEmptyString(process.env.AWS_REGION) ??
+      this.asNonEmptyString(process.env.S3_REGION) ??
+      'us-east-1';
+    const accessKeyId =
+      this.asNonEmptyString(sesConfig.accessKeyId) ?? this.asNonEmptyString(process.env.AWS_ACCESS_KEY_ID);
+    const secretAccessKey =
+      this.asNonEmptyString(sesConfig.secretAccessKey) ??
+      this.asNonEmptyString(process.env.AWS_SECRET_ACCESS_KEY);
+
+    const results = participants.map((participant) => ({
+      participantId: participant.id,
+      personId: participant.personId,
+      url: this.buildPortalSigningUrl(participant.id),
+      email:
+        this.asNonEmptyString(participant.person.primaryEmail) ??
+        this.asNonEmptyString(participant.person.businessEmail) ??
+        this.asNonEmptyString(participant.person.user?.email),
+      status: 'SKIPPED' as 'SKIPPED' | 'SENT' | 'FAILED',
+      reason: 'Not attempted',
+    }));
+
+    if (!fromEmail) {
+      return {
+        total: results.length,
+        sent: 0,
+        failed: results.length,
+        results: results.map((row) => ({
+          ...row,
+          status: 'FAILED' as const,
+          reason: 'AWS SES fromEmail is not configured',
+        })),
+      };
+    }
+
+    const ses = new SESClient({
+      region,
+      credentials:
+        accessKeyId && secretAccessKey
+          ? {
+              accessKeyId,
+              secretAccessKey,
+            }
+          : undefined,
+    });
+
+    const completed: Array<{
+      participantId: string;
+      personId: string;
+      url: string;
+      email?: string;
+      status: 'SENT' | 'FAILED';
+      reason?: string;
+    }> = [];
+
+    for (const invite of results) {
+      if (!invite.email) {
+        completed.push({
+          ...invite,
+          status: 'FAILED',
+          reason: 'No email found for participant',
+        });
+        continue;
+      }
+
+      const participantRecord = participants.find((participant) => participant.id === invite.participantId);
+      const recipientName = participantRecord
+        ? `${participantRecord.person.legalFirstName} ${participantRecord.person.legalLastName}`.trim()
+        : 'there';
+
+      const body = [
+        `Hello ${recipientName},`,
+        '',
+        `You have been requested to sign: ${title}`,
+        '',
+        'Open the secure signing packet using this link:',
+        invite.url,
+        '',
+        'If the link does not open directly, sign in and navigate to Portal.',
+      ].join('\n');
+
+      try {
+        await ses.send(
+          new SendEmailCommand({
+            Source: fromEmail,
+            Destination: {
+              ToAddresses: [invite.email],
+            },
+            ReplyToAddresses: replyToEmail ? [replyToEmail] : undefined,
+            Message: {
+              Subject: {
+                Data: `Signature request: ${title}`,
+                Charset: 'UTF-8',
+              },
+              Body: {
+                Text: {
+                  Data: body,
+                  Charset: 'UTF-8',
+                },
+              },
+            },
+          }),
+        );
+
+        completed.push({
+          ...invite,
+          status: 'SENT',
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown SES error';
+        completed.push({
+          ...invite,
+          status: 'FAILED',
+          reason: message,
+        });
+      }
+    }
+
+    const sent = completed.filter((row) => row.status === 'SENT').length;
+    return {
+      total: completed.length,
+      sent,
+      failed: completed.length - sent,
+      results: completed,
+    };
+  }
+
+  async generateGrantLetter(actor: AuthenticatedUser, grantId: string): Promise<GrantLetterPayload> {
     const detail = await this.getGrantDetail(actor, grantId);
     const grant = detail.grant;
 
@@ -684,9 +1009,9 @@ export class EquityService {
       : 'Per plan and agreement terms';
 
     const title = `${grant.awardType} Grant Letter - ${recipientName}`;
-    const fileName = `${recipientName.replace(/\s+/g, '-').toLowerCase()}-${grant.awardType.toLowerCase()}-grant-letter.md`;
+    const fileName = `${recipientName.replace(/\s+/g, '-').toLowerCase()}-${grant.awardType.toLowerCase()}-grant-letter.pdf`;
 
-    const content = [
+    const markdownLines = [
       `# ${legalEntityName}`,
       '',
       '## Notice of Equity Grant',
@@ -735,13 +1060,17 @@ export class EquityService {
       `${recipientName}`,
       '',
       '_Generated by Arkive Equity Workspace - native e-sign ready_',
-    ].join('\n');
+    ];
+
+    const previewText = markdownLines.join('\n');
+    const pdfBytes = await this.renderGrantLetterPdf(markdownLines);
 
     return {
       title,
       fileName,
-      mimeType: 'text/markdown',
-      content,
+      mimeType: 'application/pdf',
+      contentBase64: Buffer.from(pdfBytes).toString('base64'),
+      previewText,
       defaultParticipants: [
         {
           personId: grant.personId,
@@ -759,6 +1088,125 @@ export class EquityService {
           : []),
       ],
       eSignConfigured: this.toBoolean(esign.enabled),
+    };
+  }
+
+  async createGrantESignPackage(
+    actor: AuthenticatedUser,
+    grantId: string,
+    dto: CreateGrantESignPackageDto,
+    capture: GrantESignCaptureContext = {},
+  ) {
+    const detail = await this.getGrantDetail(actor, grantId);
+    const grant = detail.grant;
+
+    await this.ensurePersonInOrg(actor.organizationId, dto.signatoryPersonId);
+    if (dto.signatoryPersonId === grant.personId) {
+      throw new BadRequestException('Company signatory must be different from the grant recipient');
+    }
+
+    const letter = await this.generateGrantLetter(actor, grantId);
+    const letterMimeType = letter.mimeType || 'application/pdf';
+    const letterBytes = Buffer.from(letter.contentBase64, 'base64');
+    const expiresAt = this.parseDateInput(dto.expiresAt, 'expiresAt');
+
+    let uploaded: { key: string; sha256: string; byteSize: number };
+    try {
+      uploaded = await this.storage.uploadObject(
+        actor.organizationId,
+        letterMimeType,
+        letterBytes,
+        'grant-letters',
+      );
+    } catch {
+      throw new BadRequestException('Unable to store grant letter in document storage');
+    }
+
+    const requestTitle = `${letter.title} - Signature Packet`;
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const document = await tx.document.create({
+        data: {
+          organizationId: actor.organizationId,
+          category: 'grant-letter',
+          title: letter.title,
+          personId: grant.personId,
+          status: 'ACTIVE',
+          version: 1,
+        },
+      });
+
+      const documentVersion = await tx.documentVersion.create({
+        data: {
+          organizationId: actor.organizationId,
+          documentId: document.id,
+          versionNumber: 1,
+          storageKey: uploaded.key,
+          sha256: uploaded.sha256,
+          mimeType: letterMimeType,
+          byteSize: uploaded.byteSize,
+          createdByUserId: actor.id,
+        },
+      });
+
+      const signatureRequest = await tx.signatureRequest.create({
+        data: {
+          organizationId: actor.organizationId,
+          documentId: document.id,
+          documentVersionId: documentVersion.id,
+          title: requestTitle,
+          status: 'SENT',
+          signingOrderRequired: true,
+          expiresAt: expiresAt ?? undefined,
+          createdByUserId: actor.id,
+          participants: {
+            create: [
+              {
+                organizationId: actor.organizationId,
+                personId: grant.personId,
+                signingOrder: 1,
+                role: 'Recipient',
+              },
+              {
+                organizationId: actor.organizationId,
+                personId: dto.signatoryPersonId,
+                signingOrder: 2,
+                role: 'Company Signatory',
+              },
+            ],
+          },
+          events: {
+            create: {
+              organizationId: actor.organizationId,
+              eventType: 'REQUEST_CREATED',
+              payload: {
+                source: 'equity-grant-package',
+                requesterUserId: actor.id,
+                originIpAddress: capture.ipAddress ?? null,
+                originUserAgent: capture.userAgent ?? null,
+                originLocale: this.normalizeLocaleTag(capture.localeHint) ?? null,
+                createdAt: new Date().toISOString(),
+              } as Prisma.InputJsonValue,
+            },
+          },
+        },
+      });
+
+      return {
+        documentId: document.id,
+        documentVersionId: documentVersion.id,
+        signatureRequestId: signatureRequest.id,
+      };
+    });
+
+    const emailInvites = await this.sendGrantPacketInviteEmails(actor, result.signatureRequestId, requestTitle);
+
+    return {
+      ...result,
+      title: letter.title,
+      recipientPersonId: grant.personId,
+      signatoryPersonId: dto.signatoryPersonId,
+      emailInvites,
     };
   }
 

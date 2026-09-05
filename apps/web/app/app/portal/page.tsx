@@ -1,5 +1,6 @@
 "use client";
 
+import { useSearchParams } from 'next/navigation';
 import { PointerEvent, useEffect, useRef, useState } from 'react';
 
 import { Modal } from '../_components/modal';
@@ -70,6 +71,9 @@ type ParticipantPacket = {
 };
 
 export default function PortalPage() {
+  const searchParams = useSearchParams();
+  const participantIdFromQuery = searchParams.get('participantId')?.trim() ?? '';
+
   const [data, setData] = useState<PortalSummary | null>(null);
   const [signatureRequests, setSignatureRequests] = useState<MySignatureParticipant[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -86,6 +90,7 @@ export default function PortalPage() {
   const [savingSignature, setSavingSignature] = useState(false);
   const [decliningSignature, setDecliningSignature] = useState(false);
   const [drawnHasInk, setDrawnHasInk] = useState(false);
+  const [openedDeepLinkParticipantId, setOpenedDeepLinkParticipantId] = useState<string | null>(null);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawingRef = useRef(false);
@@ -122,6 +127,19 @@ export default function PortalPage() {
     void loadSummary();
     void loadSignatureRequests();
   }, []);
+
+  useEffect(() => {
+    if (!participantIdFromQuery) {
+      return;
+    }
+
+    if (openedDeepLinkParticipantId === participantIdFromQuery) {
+      return;
+    }
+
+    setOpenedDeepLinkParticipantId(participantIdFromQuery);
+    void openSigningPacket(participantIdFromQuery);
+  }, [participantIdFromQuery, openedDeepLinkParticipantId]);
 
   useEffect(() => {
     if (!modalOpen || signatureType !== 'DRAWN') {
