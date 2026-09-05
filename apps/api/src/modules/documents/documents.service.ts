@@ -172,7 +172,6 @@ export class DocumentsService {
       },
       select: {
         id: true,
-        storageKey: true,
         documentId: true,
       },
     });
@@ -182,8 +181,76 @@ export class DocumentsService {
     }
 
     await this.accessPolicy.assertDocumentRead(actor, version.documentId);
+    return { url: `/api/v1/documents/versions/${version.id}/download`, expiresInSeconds: 120 };
+  }
 
-    const url = await this.storage.createDownloadUrl(version.storageKey);
-    return { url, expiresInSeconds: 120 };
+  async downloadVersion(actor: AuthenticatedUser, documentVersionId: string) {
+    const version = await this.prisma.documentVersion.findFirst({
+      where: {
+        id: documentVersionId,
+        organizationId: actor.organizationId,
+      },
+      select: {
+        id: true,
+        storageKey: true,
+        mimeType: true,
+        versionNumber: true,
+        documentId: true,
+        document: {
+          select: {
+            title: true,
+          },
+        },
+      },
+    });
+
+    if (!version) {
+      throw new NotFoundException('Document version not found');
+    }
+
+    await this.accessPolicy.assertDocumentRead(actor, version.documentId);
+
+    const bytes = await this.storage.downloadObject(version.storageKey);
+    const extension = this.fileExtensionForMimeType(version.mimeType);
+    const baseName = this.sanitizeFileName(version.document.title || '') || 'document';
+    const fileName = `${baseName}-v${version.versionNumber}.${extension}`;
+
+    return {
+      bytes,
+      mimeType: version.mimeType || 'application/octet-stream',
+      fileName,
+    };
+  }
+
+  private sanitizeFileName(value: string): string {
+    return value
+      .trim()
+      .replace(/[^a-zA-Z0-9._-]+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .toLowerCase();
+  }
+
+  private fileExtensionForMimeType(mimeType: string): string {
+    const value = mimeType.toLowerCase();
+    if (value.includes('pdf')) {
+      return 'pdf';
+    }
+    if (value.includes('json')) {
+      return 'json';
+    }
+    if (value.includes('markdown')) {
+      return 'md';
+    }
+    if (value.includes('plain')) {
+      return 'txt';
+    }
+    if (value.includes('png')) {
+      return 'png';
+    }
+    if (value.includes('jpeg') || value.includes('jpg')) {
+      return 'jpg';
+    }
+    return 'bin';
   }
 }

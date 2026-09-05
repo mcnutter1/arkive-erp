@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Res, UseGuards } from '@nestjs/common';
 
 import { AuthGuard } from '../auth/auth.guard.js';
 import { CurrentUser } from '../auth/current-user.decorator.js';
@@ -56,5 +56,19 @@ export class DocumentsController {
   @RequirePermissions('documents.read')
   getDownloadUrl(@CurrentUser() actor: AuthenticatedUser, @Param('documentVersionId') documentVersionId: string) {
     return this.documentsService.getDownloadUrl(actor, documentVersionId);
+  }
+
+  @Get('versions/:documentVersionId/download')
+  @RequirePermissions('documents.read')
+  async downloadVersion(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('documentVersionId') documentVersionId: string,
+    @Res({ passthrough: true }) reply: { header: (name: string, value: string) => unknown },
+  ) {
+    const payload = await this.documentsService.downloadVersion(actor, documentVersionId);
+    reply.header('Content-Type', payload.mimeType);
+    reply.header('Content-Disposition', `inline; filename="${payload.fileName}"`);
+    reply.header('Cache-Control', 'private, max-age=120');
+    return Buffer.from(payload.bytes);
   }
 }

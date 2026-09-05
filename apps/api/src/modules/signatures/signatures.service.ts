@@ -260,9 +260,7 @@ export class SignaturesService {
         ? SignatureParticipantStatus.VIEWED
         : participant.status;
 
-    const downloadUrl = await this.storage.createDownloadUrl(
-      participant.signatureRequest.documentVersion.storageKey,
-    );
+    const downloadUrl = this.buildAuthenticatedParticipantDocumentUrl(participant.id);
 
     return {
       participant: {
@@ -378,9 +376,7 @@ export class SignaturesService {
         ? SignatureParticipantStatus.VIEWED
         : participant.status;
 
-    const downloadUrl = await this.storage.createDownloadUrl(
-      participant.signatureRequest.documentVersion.storageKey,
-    );
+    const downloadUrl = this.buildPublicParticipantDocumentUrl(participant.id, token);
 
     return {
       participant: {
@@ -816,6 +812,92 @@ export class SignaturesService {
 
       return updated;
     });
+  }
+
+  async getMyParticipantDocument(actor: AuthenticatedUser, participantId: string) {
+    if (!actor.personId) {
+      throw new ForbiddenException('Only person-linked users can sign');
+    }
+
+    const participant = await this.prisma.signatureParticipant.findFirst({
+      where: {
+        id: participantId,
+        organizationId: actor.organizationId,
+        personId: actor.personId,
+      },
+      include: {
+        signatureRequest: {
+          include: {
+            document: {
+              select: {
+                title: true,
+              },
+            },
+            documentVersion: {
+              select: {
+                storageKey: true,
+                mimeType: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!participant) {
+      throw new NotFoundException('Signature packet not found');
+    }
+
+    const bytes = await this.storage.downloadObject(participant.signatureRequest.documentVersion.storageKey);
+    const extension = this.fileExtensionForMimeType(participant.signatureRequest.documentVersion.mimeType);
+    const fileName = `${this.sanitizeFileName(participant.signatureRequest.document.title) || 'signature-document'}.${extension}`;
+
+    return {
+      bytes,
+      mimeType: participant.signatureRequest.documentVersion.mimeType || 'application/octet-stream',
+      fileName,
+    };
+  }
+
+  async getPublicParticipantDocument(participantId: string, token: string | undefined) {
+    const participant = await this.prisma.signatureParticipant.findFirst({
+      where: {
+        id: participantId,
+      },
+      include: {
+        signatureRequest: {
+          include: {
+            document: {
+              select: {
+                title: true,
+              },
+            },
+            documentVersion: {
+              select: {
+                storageKey: true,
+                mimeType: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!participant) {
+      throw new NotFoundException('Signature packet not found');
+    }
+
+    this.assertPublicLinkAccess(participant.id, participant.organizationId, token);
+
+    const bytes = await this.storage.downloadObject(participant.signatureRequest.documentVersion.storageKey);
+    const extension = this.fileExtensionForMimeType(participant.signatureRequest.documentVersion.mimeType);
+    const fileName = `${this.sanitizeFileName(participant.signatureRequest.document.title) || 'signature-document'}.${extension}`;
+
+    return {
+      bytes,
+      mimeType: participant.signatureRequest.documentVersion.mimeType || 'application/octet-stream',
+      fileName,
+    };
   }
 
   private async captureSignedArtifact(input: {
@@ -1457,6 +1539,21 @@ export class SignaturesService {
     return normalized || undefined;
   }
 
+  private buildAuthenticatedParticipantDocumentUrl(participantId: string): string {
+    return `/api/v1/signatures/participants/${participantId}/document`;
+  }
+
+  private buildPublicParticipantDocumentUrl(participantId: string, token?: string): string {
+    const params = new URLSearchParams();
+    if (token?.trim()) {
+      params.set('token', token.trim());
+    }
+    const query = params.toString();
+    return query
+      ? `/api/v1/signatures/public/participants/${participantId}/document?${query}`
+      : `/api/v1/signatures/public/participants/${participantId}/document`;
+  }
+
   private assertPublicLinkAccess(
     participantId: string,
     organizationId: string,
@@ -1582,5 +1679,28 @@ export class SignaturesService {
 
   private sha256Hex(value: string): string {
     return createHash('sha256').update(value).digest('hex');
+  }
+
+  private fileExtensionForMimeType(mimeType: string | null | undefined): string {
+    const value = (mimeType || '').toLowerCase();
+    if (value.includes('pdf')) {
+      return 'pdf';
+    }
+    if (value.includes('json')) {
+      return 'json';
+    }
+    if (value.includes('markdown')) {
+      return 'md';
+    }
+    if (value.includes('plain')) {
+      return 'txt';
+    }
+    if (value.includes('png')) {
+      return 'png';
+    }
+    if (value.includes('jpeg') || value.includes('jpg')) {
+      return 'jpg';
+    }
+    return 'bin';
   }
 }

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 
 import { AuthGuard } from '../auth/auth.guard.js';
 import { CurrentUser } from '../auth/current-user.decorator.js';
@@ -104,6 +104,20 @@ export class SignaturesController {
     return this.signaturesService.getMyParticipantPacket(actor, participantId);
   }
 
+  @Get('participants/:participantId/document')
+  @RequirePermissions('documents.sign.self')
+  async myDocument(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('participantId') participantId: string,
+    @Res({ passthrough: true }) reply: { header: (name: string, value: string) => unknown },
+  ) {
+    const payload = await this.signaturesService.getMyParticipantDocument(actor, participantId);
+    reply.header('Content-Type', payload.mimeType);
+    reply.header('Content-Disposition', `inline; filename="${payload.fileName}"`);
+    reply.header('Cache-Control', 'private, max-age=120');
+    return Buffer.from(payload.bytes);
+  }
+
   @Get('public/participants/:participantId')
   @Public()
   publicPacket(
@@ -112,6 +126,20 @@ export class SignaturesController {
     @Req() req: SignatureRequestLike,
   ) {
     return this.signaturesService.getPublicParticipantPacket(participantId, token, captureContext(req));
+  }
+
+  @Get('public/participants/:participantId/document')
+  @Public()
+  async publicDocument(
+    @Param('participantId') participantId: string,
+    @Query('token') token: string | undefined,
+    @Res({ passthrough: true }) reply: { header: (name: string, value: string) => unknown },
+  ) {
+    const payload = await this.signaturesService.getPublicParticipantDocument(participantId, token);
+    reply.header('Content-Type', payload.mimeType);
+    reply.header('Content-Disposition', `inline; filename="${payload.fileName}"`);
+    reply.header('Cache-Control', 'private, max-age=120');
+    return Buffer.from(payload.bytes);
   }
 
   @Post('participants/:participantId/sign')
