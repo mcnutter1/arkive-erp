@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { SharePermission } from '@prisma/client';
 
 import { AuthenticatedUser } from '../auth/auth.types.js';
 import { PrismaService } from '../common/prisma.service.js';
@@ -7,13 +8,51 @@ import { PrismaService } from '../common/prisma.service.js';
 export class SearchService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private hasPermission(actor: AuthenticatedUser, permission: string): boolean {
+    return actor.permissions.includes('*') || actor.permissions.includes(permission);
+  }
+
   async globalSearch(actor: AuthenticatedUser, q: string) {
     const query = q.trim();
     if (query.length < 2) {
       return { people: [], documents: [], grants: [], rounds: [] };
     }
 
-    const [people, documents, grants, rounds] = await this.prisma.$transaction([
+    let sharedDocumentIds: string[] = [];
+    const canReadAllDocuments = this.hasPermission(actor, 'documents.read');
+    if (!canReadAllDocuments && actor.personId) {
+      const now = new Date();
+      const shares = await this.prisma.recordShare.findMany({
+        where: {
+          organizationId: actor.organizationId,
+          resourceType: 'DOCUMENT',
+          personId: actor.personId,
+          permission: {
+            in: [SharePermission.READ, SharePermission.WRITE],
+          },
+          OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+        },
+        select: {
+          resourceId: true,
+        },
+      });
+      sharedDocumentIds = shares.map((share) => share.resourceId);
+    }
+
+    const documentAccessFilter = canReadAllDocuments
+      ? undefined
+      : actor.personId
+        ? {
+            OR: [
+              { personId: actor.personId },
+              ...(sharedDocumentIds.length > 0 ? [{ id: { in: sharedDocumentIds } }] : []),
+            ],
+          }
+        : {
+            id: '__NO_ACCESS__',
+          };
+
+    const [people, documents, grants, rounds] = await Promise.all([
       this.prisma.person.findMany({
         where: {
           organizationId: actor.organizationId,
@@ -28,10 +67,12 @@ export class SearchService {
       this.prisma.document.findMany({
         where: {
           organizationId: actor.organizationId,
+          archivedAt: null,
           OR: [
             { title: { contains: query, mode: 'insensitive' } },
             { category: { contains: query, mode: 'insensitive' } },
           ],
+          ...(documentAccessFilter ? { AND: [documentAccessFilter] } : {}),
         },
         take: 10,
       }),

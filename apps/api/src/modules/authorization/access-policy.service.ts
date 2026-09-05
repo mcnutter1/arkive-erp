@@ -1,4 +1,5 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
+import { SharePermission } from '@prisma/client';
 
 import { AuthenticatedUser } from '../auth/auth.types.js';
 import { PrismaService } from '../common/prisma.service.js';
@@ -6,6 +7,10 @@ import { PrismaService } from '../common/prisma.service.js';
 @Injectable()
 export class AccessPolicyService {
   constructor(private readonly prisma: PrismaService) {}
+
+  private hasPermission(actor: AuthenticatedUser, permission: string): boolean {
+    return actor.permissions.includes('*') || actor.permissions.includes(permission);
+  }
 
   async assertDocumentRead(actor: AuthenticatedUser, documentId: string): Promise<void> {
     const doc = await this.prisma.document.findFirst({
@@ -52,7 +57,7 @@ export class AccessPolicyService {
     sharePermission: 'READ' | 'WRITE',
     broadPermission: string,
   ): Promise<void> {
-    const broad = actor.permissions.includes(broadPermission);
+    const broad = this.hasPermission(actor, broadPermission);
     const owner = !!actor.personId && ownerPersonId === actor.personId;
 
     if (broad || owner) {
@@ -64,13 +69,17 @@ export class AccessPolicyService {
     }
 
     const now = new Date();
+    const acceptableSharePermissions: SharePermission[] =
+      sharePermission === 'READ'
+        ? [SharePermission.READ, SharePermission.WRITE]
+        : [SharePermission.WRITE];
     const share = await this.prisma.recordShare.findFirst({
       where: {
         organizationId: actor.organizationId,
         resourceType: 'DOCUMENT',
         resourceId: documentId,
         personId: actor.personId,
-        permission: sharePermission,
+        permission: { in: acceptableSharePermissions },
         OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
       },
     });

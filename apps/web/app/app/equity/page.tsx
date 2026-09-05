@@ -182,6 +182,20 @@ function dateInputToday(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+function addYearsToDateInput(dateInput: string, years: number): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateInput)) {
+    return '';
+  }
+
+  const parsed = new Date(`${dateInput}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime())) {
+    return '';
+  }
+
+  parsed.setUTCFullYear(parsed.getUTCFullYear() + years);
+  return parsed.toISOString().slice(0, 10);
+}
+
 function normalizeNumericInput(value: string): string {
   return value.trim().replaceAll(',', '');
 }
@@ -258,7 +272,7 @@ function defaultGrantForm(): GrantFormState {
     planId: '',
     currency: 'USD',
     grantDate: today,
-    expirationDate: '',
+    expirationDate: addYearsToDateInput(today, 10),
     vestingStartDate: today,
     cliffMonths: '12',
     durationMonths: '48',
@@ -1707,7 +1721,23 @@ export default function EquityPage() {
               <input
                 type="date"
                 value={grantForm.grantDate}
-                onChange={(event) => setGrantForm((prev) => ({ ...prev, grantDate: event.target.value }))}
+                onChange={(event) =>
+                  setGrantForm((prev) => {
+                    const nextGrantDate = event.target.value;
+                    const previousDefaultExpiration = addYearsToDateInput(prev.grantDate, 10);
+                    const nextDefaultExpiration = addYearsToDateInput(nextGrantDate, 10);
+                    const shouldUpdateExpiration =
+                      !prev.expirationDate || prev.expirationDate === previousDefaultExpiration;
+
+                    return {
+                      ...prev,
+                      grantDate: nextGrantDate,
+                      expirationDate: shouldUpdateExpiration
+                        ? nextDefaultExpiration
+                        : prev.expirationDate,
+                    };
+                  })
+                }
                 className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
               />
             </label>

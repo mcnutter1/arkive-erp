@@ -78,8 +78,15 @@ export default function DocumentsPage() {
       const payload = (await response.json()) as DocumentsResponse;
       setDocuments(payload.data);
 
-      if (!selectedDocumentId && payload.data[0]) {
-        setSelectedDocumentId(payload.data[0].id);
+      if (payload.data.length === 0) {
+        setSelectedDocumentId('');
+        setVersions([]);
+        return;
+      }
+
+      if (!selectedDocumentId || !payload.data.some((doc) => doc.id === selectedDocumentId)) {
+        const firstDocument = payload.data[0];
+        setSelectedDocumentId(firstDocument ? firstDocument.id : '');
       }
     } catch {
       setError('Unable to load documents.');
@@ -99,11 +106,13 @@ export default function DocumentsPage() {
         credentials: 'include',
       });
       if (!response.ok) {
+        setVersions([]);
         setError(await readApiError(response, 'Unable to load document versions.'));
         return;
       }
       setVersions((await response.json()) as DocumentVersion[]);
     } catch {
+      setVersions([]);
       setError('Unable to load document versions.');
     }
   }

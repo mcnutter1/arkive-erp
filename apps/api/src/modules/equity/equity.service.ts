@@ -355,6 +355,12 @@ export class EquityService {
     return parsed;
   }
 
+  private addYears(date: Date, years: number): Date {
+    const next = new Date(date);
+    next.setUTCFullYear(next.getUTCFullYear() + years);
+    return next;
+  }
+
   private async getConfiguredBaseOutstandingShares(organizationId: string): Promise<Decimal> {
     const setting = await this.prisma.systemSetting.findFirst({
       where: {
@@ -2146,7 +2152,8 @@ export class EquityService {
 
     const grantDate = this.parseDateInput(dto.grantDate, 'grantDate', true) as Date;
     const vestingStartDate = this.parseDateInput(dto.vestingStartDate, 'vestingStartDate', true) as Date;
-    const expirationDate = this.parseDateInput(dto.expirationDate, 'expirationDate');
+    const expirationDate =
+      this.parseDateInput(dto.expirationDate, 'expirationDate') ?? this.addYears(grantDate, 10);
     const currency = (dto.currency ?? 'USD').trim().toUpperCase();
 
     if (!currency) {

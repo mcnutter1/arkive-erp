@@ -77,6 +77,9 @@ describe('EquityLifecycleService', () => {
         }),
         aggregate: vi.fn().mockResolvedValue({ _sum: { quantity: new Decimal('10') } }),
       },
+      terminationRecord: {
+        findFirst: vi.fn().mockResolvedValue(null),
+      },
       equityTransaction: {
         aggregate: vi.fn().mockResolvedValue({ _max: { ledgerSequence: 41n } }),
       },

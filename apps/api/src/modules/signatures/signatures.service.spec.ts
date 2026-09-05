@@ -113,6 +113,12 @@ describe('SignaturesService', () => {
       },
       signatureEvent: {
         findFirst: vi.fn().mockResolvedValue(null),
+        create: vi.fn().mockResolvedValue({ id: 'event-email-summary' }),
+      },
+      systemSetting: {
+        findFirst: vi.fn().mockResolvedValue({
+          value: {},
+        }),
       },
       signatureRequest: {
         findFirst: vi.fn().mockResolvedValue({
@@ -193,7 +199,7 @@ describe('SignaturesService', () => {
       },
     );
 
-    expect(uploadObject).toHaveBeenCalledTimes(1);
+    expect(uploadObject).toHaveBeenCalledTimes(2);
     expect(result).toMatchObject({
       artifactCaptured: true,
       signedDocumentVersionId: 'dv-signed',
