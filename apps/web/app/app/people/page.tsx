@@ -92,12 +92,104 @@ type CreatePersonForm = {
   classification: string;
   employmentStatus: string;
   timezone: string;
+  jobTitle: string;
+  department: string;
+  companySignatory: boolean;
 };
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? '/api/v1';
 
 const engagementKinds = ['EMPLOYEE', 'CONTRACTOR', 'ADVISOR', 'DIRECTOR', 'INTERN', 'CONSULTANT', 'OTHER'];
 const engagementStatuses = ['DRAFT', 'PREBOARDING', 'ACTIVE', 'PAUSED', 'OFFBOARDING', 'TERMINATED', 'ALUMNI'];
+const personClassificationOptions = [
+  'FULL_TIME',
+  'PART_TIME',
+  'CONTRACTOR',
+  'CONSULTANT',
+  'INTERN',
+  'ADVISOR',
+  'DIRECTOR',
+];
+const personEmploymentStatusOptions = [
+  'PREBOARDING',
+  'ACTIVE',
+  'ON_LEAVE',
+  'PAUSED',
+  'OFFBOARDING',
+  'TERMINATED',
+  'ALUMNI',
+];
+const commonTimezoneOptions = [
+  'UTC',
+  'America/New_York',
+  'America/Chicago',
+  'America/Denver',
+  'America/Los_Angeles',
+  'Europe/London',
+  'Europe/Berlin',
+  'Asia/Tokyo',
+  'Asia/Singapore',
+  'Australia/Sydney',
+];
+const workDepartmentOptions = [
+  'Executive',
+  'Engineering',
+  'Product',
+  'Design',
+  'Finance',
+  'Legal',
+  'Operations',
+  'People',
+  'Sales',
+  'Marketing',
+  'Customer Success',
+];
+const workJobTitleOptions = [
+  'Chief Executive Officer',
+  'Chief Financial Officer',
+  'Chief Operating Officer',
+  'Chief Technology Officer',
+  'VP Engineering',
+  'Director of Engineering',
+  'Engineering Manager',
+  'Senior Software Engineer',
+  'Software Engineer',
+  'Product Manager',
+  'Designer',
+  'HR Manager',
+  'Operations Manager',
+  'Legal Counsel',
+  'Advisor',
+];
+const genderOptions = ['Female', 'Male', 'Non-binary', 'Prefer not to say', 'Self-described'];
+const maritalStatusOptions = ['Single', 'Married', 'Domestic Partnership', 'Divorced', 'Widowed', 'Prefer not to say'];
+const payFrequencyOptions = ['ANNUAL', 'SEMI_MONTHLY', 'BI_WEEKLY', 'MONTHLY', 'WEEKLY', 'HOURLY'];
+const currencyOptions = ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'JPY'];
+const citizenshipStatusOptions = [
+  'Citizen',
+  'Permanent Resident',
+  'Visa Holder',
+  'Work Authorized',
+  'Other',
+];
+const skillOptions = [
+  'Leadership',
+  'Management',
+  'Finance',
+  'Accounting',
+  'Legal',
+  'Product Management',
+  'Design',
+  'Frontend Engineering',
+  'Backend Engineering',
+  'Data Analysis',
+  'Security',
+  'People Operations',
+  'Recruiting',
+  'Sales',
+  'Marketing',
+  'Customer Success',
+];
 type PeopleModalView = 'createPerson' | 'createEngagement' | 'editProfile' | null;
 
 function asObject(value: unknown): Record<string, unknown> {
@@ -118,7 +210,21 @@ function readArray(record: Record<string, unknown>, key: string): string[] {
 }
 
 function readBoolean(record: Record<string, unknown>, key: string): boolean {
-  return record[key] === true;
+  const value = record[key];
+  if (value === true) {
+    return true;
+  }
+
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    return normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'on';
+  }
+
+  if (typeof value === 'number') {
+    return value === 1;
+  }
+
+  return false;
 }
 
 function compactObject(input: Record<string, unknown>): Record<string, unknown> | undefined {
@@ -143,6 +249,21 @@ function compactObject(input: Record<string, unknown>): Record<string, unknown> 
   }
 
   return Object.fromEntries(entries);
+}
+
+function labelFromToken(value: string): string {
+  return value
+    .toLowerCase()
+    .replaceAll('_', ' ')
+    .replace(/\b\w/g, (match) => match.toUpperCase());
+}
+
+function withCurrentOption(options: string[], currentValue: string | null | undefined): string[] {
+  const current = currentValue?.trim();
+  if (!current || options.includes(current)) {
+    return options;
+  }
+  return [current, ...options];
 }
 
 function toDayStartIso(dateInput: string): string | undefined {
@@ -170,9 +291,12 @@ function defaultCreatePersonForm(): CreatePersonForm {
     preferredName: '',
     primaryEmail: '',
     businessEmail: '',
-    classification: '',
+    classification: 'FULL_TIME',
     employmentStatus: 'ACTIVE',
     timezone: 'UTC',
+    jobTitle: '',
+    department: '',
+    companySignatory: false,
   };
 }
 
@@ -285,6 +409,16 @@ export default function PeoplePage() {
     setNotice(null);
 
     try {
+      const workInfo = compactObject({
+        jobTitle: createPersonForm.jobTitle.trim() || undefined,
+        department: createPersonForm.department.trim() || undefined,
+        companySignatory: createPersonForm.companySignatory ? true : undefined,
+      });
+
+      const hrisProfile = compactObject({
+        workInfo,
+      });
+
       const payload = {
         legalFirstName: createPersonForm.legalFirstName.trim(),
         legalLastName: createPersonForm.legalLastName.trim(),
@@ -294,6 +428,7 @@ export default function PeoplePage() {
         classification: createPersonForm.classification.trim() || undefined,
         employmentStatus: createPersonForm.employmentStatus.trim() || undefined,
         timezone: createPersonForm.timezone.trim() || 'UTC',
+        hrisProfile,
       };
 
       const response = await fetch(`${apiBaseUrl}/people`, {
@@ -336,10 +471,17 @@ export default function PeoplePage() {
     const form = new FormData(event.currentTarget);
     const read = (key: string) => String(form.get(key) ?? '').trim();
 
-    const skills = read('skills')
+    const selectedSkills = form
+      .getAll('skills')
+      .map((value) => String(value).trim())
+      .filter(Boolean);
+
+    const customSkills = read('skillsCustom')
       .split(',')
       .map((item) => item.trim())
       .filter(Boolean);
+
+    const skills = [...new Set([...selectedSkills, ...customSkills])];
 
     const homeAddress = compactObject({
       line1: read('homeAddressLine1') || undefined,
@@ -643,7 +785,7 @@ export default function PeoplePage() {
                       <p className="font-medium text-slate-900">{person.legalFirstName} {person.legalLastName}</p>
                       <p className="text-xs text-slate-500">{person.primaryEmail ?? person.businessEmail ?? 'No email'}</p>
                     </td>
-                    <td className="py-2 pr-4">{person.employmentStatus ?? 'N/A'}</td>
+                    <td className="py-2 pr-4">{person.employmentStatus ? labelFromToken(person.employmentStatus) : 'N/A'}</td>
                     <td className="py-2 pr-4">
                       <div className="flex flex-wrap gap-2">
                         <button
@@ -688,85 +830,153 @@ export default function PeoplePage() {
         description="Start a record, then complete full HR profile details."
         onClose={() => setModalView(null)}
       >
-        <form className="grid gap-3" onSubmit={onCreatePerson}>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-              <span>Legal First Name</span>
-              <input
-                value={createPersonForm.legalFirstName}
-                onChange={(event) => setCreatePersonForm((prev) => ({ ...prev, legalFirstName: event.target.value }))}
-                required
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
-              />
-            </label>
-            <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-              <span>Legal Last Name</span>
-              <input
-                value={createPersonForm.legalLastName}
-                onChange={(event) => setCreatePersonForm((prev) => ({ ...prev, legalLastName: event.target.value }))}
-                required
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
-              />
-            </label>
+        <form className="grid gap-4" onSubmit={onCreatePerson}>
+          <div className="grid gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Core Identity</p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+                <span>Legal First Name</span>
+                <input
+                  value={createPersonForm.legalFirstName}
+                  onChange={(event) => setCreatePersonForm((prev) => ({ ...prev, legalFirstName: event.target.value }))}
+                  required
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+                />
+              </label>
+              <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+                <span>Legal Last Name</span>
+                <input
+                  value={createPersonForm.legalLastName}
+                  onChange={(event) => setCreatePersonForm((prev) => ({ ...prev, legalLastName: event.target.value }))}
+                  required
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+                />
+              </label>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+                <span>Preferred Name</span>
+                <input
+                  value={createPersonForm.preferredName}
+                  onChange={(event) => setCreatePersonForm((prev) => ({ ...prev, preferredName: event.target.value }))}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+                />
+              </label>
+              <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+                <span>Primary Email</span>
+                <input
+                  type="email"
+                  value={createPersonForm.primaryEmail}
+                  onChange={(event) => setCreatePersonForm((prev) => ({ ...prev, primaryEmail: event.target.value }))}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+                />
+              </label>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+                <span>Business Email</span>
+                <input
+                  type="email"
+                  value={createPersonForm.businessEmail}
+                  onChange={(event) => setCreatePersonForm((prev) => ({ ...prev, businessEmail: event.target.value }))}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+                />
+              </label>
+              <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+                <span>Timezone</span>
+                <select
+                  value={createPersonForm.timezone}
+                  onChange={(event) => setCreatePersonForm((prev) => ({ ...prev, timezone: event.target.value }))}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+                >
+                  {withCurrentOption(commonTimezoneOptions, createPersonForm.timezone).map((timezone) => (
+                    <option key={timezone} value={timezone}>
+                      {timezone}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-              <span>Preferred Name</span>
-              <input
-                value={createPersonForm.preferredName}
-                onChange={(event) => setCreatePersonForm((prev) => ({ ...prev, preferredName: event.target.value }))}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
-              />
-            </label>
-            <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-              <span>Primary Email</span>
-              <input
-                type="email"
-                value={createPersonForm.primaryEmail}
-                onChange={(event) => setCreatePersonForm((prev) => ({ ...prev, primaryEmail: event.target.value }))}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
-              />
-            </label>
-          </div>
+          <div className="grid gap-4 rounded-xl border border-slate-200 bg-white p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Work Profile</p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+                <span>Classification</span>
+                <select
+                  value={createPersonForm.classification}
+                  onChange={(event) => setCreatePersonForm((prev) => ({ ...prev, classification: event.target.value }))}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+                >
+                  {personClassificationOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {labelFromToken(option)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+                <span>Employment Status</span>
+                <select
+                  value={createPersonForm.employmentStatus}
+                  onChange={(event) => setCreatePersonForm((prev) => ({ ...prev, employmentStatus: event.target.value }))}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+                >
+                  {personEmploymentStatusOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {labelFromToken(option)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-              <span>Business Email</span>
-              <input
-                type="email"
-                value={createPersonForm.businessEmail}
-                onChange={(event) => setCreatePersonForm((prev) => ({ ...prev, businessEmail: event.target.value }))}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
-              />
-            </label>
-            <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-              <span>Timezone</span>
-              <input
-                value={createPersonForm.timezone}
-                onChange={(event) => setCreatePersonForm((prev) => ({ ...prev, timezone: event.target.value }))}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
-              />
-            </label>
-          </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+                <span>Job Title</span>
+                <select
+                  value={createPersonForm.jobTitle}
+                  onChange={(event) => setCreatePersonForm((prev) => ({ ...prev, jobTitle: event.target.value }))}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+                >
+                  <option value="">Select job title</option>
+                  {workJobTitleOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+                <span>Department</span>
+                <select
+                  value={createPersonForm.department}
+                  onChange={(event) => setCreatePersonForm((prev) => ({ ...prev, department: event.target.value }))}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+                >
+                  <option value="">Select department</option>
+                  {workDepartmentOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-              <span>Classification</span>
+            <label className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
               <input
-                value={createPersonForm.classification}
-                onChange={(event) => setCreatePersonForm((prev) => ({ ...prev, classification: event.target.value }))}
-                placeholder="Full-time, part-time, contractor"
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+                type="checkbox"
+                checked={createPersonForm.companySignatory}
+                onChange={(event) =>
+                  setCreatePersonForm((prev) => ({
+                    ...prev,
+                    companySignatory: event.target.checked,
+                  }))
+                }
               />
-            </label>
-            <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-              <span>Employment Status</span>
-              <input
-                value={createPersonForm.employmentStatus}
-                onChange={(event) => setCreatePersonForm((prev) => ({ ...prev, employmentStatus: event.target.value }))}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
-              />
+              <span>Company Signatory</span>
             </label>
           </div>
 
@@ -934,11 +1144,32 @@ export default function PeoplePage() {
               </label>
               <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
                 <span>Timezone</span>
-                <input name="timezone" defaultValue={selectedPerson.timezone ?? 'UTC'} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900" />
+                <select
+                  name="timezone"
+                  defaultValue={selectedPerson.timezone ?? 'UTC'}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+                >
+                  {withCurrentOption(commonTimezoneOptions, selectedPerson.timezone ?? 'UTC').map((timezone) => (
+                    <option key={timezone} value={timezone}>
+                      {timezone}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
                 <span>Gender</span>
-                <input name="gender" defaultValue={selectedProfile.gender ?? ''} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900" />
+                <select
+                  name="gender"
+                  defaultValue={selectedProfile.gender ?? ''}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+                >
+                  <option value="">Select value</option>
+                  {withCurrentOption(genderOptions, selectedProfile.gender).map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
               </label>
             </div>
 
@@ -946,11 +1177,31 @@ export default function PeoplePage() {
             <div className="grid gap-3 md:grid-cols-3">
               <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
                 <span>Classification</span>
-                <input name="classification" defaultValue={selectedPerson.classification ?? ''} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900" />
+                <select
+                  name="classification"
+                  defaultValue={selectedPerson.classification ?? 'FULL_TIME'}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+                >
+                  {withCurrentOption(personClassificationOptions, selectedPerson.classification).map((option) => (
+                    <option key={option} value={option}>
+                      {labelFromToken(option)}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
                 <span>Employment Status</span>
-                <input name="employmentStatus" defaultValue={selectedPerson.employmentStatus ?? ''} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900" />
+                <select
+                  name="employmentStatus"
+                  defaultValue={selectedPerson.employmentStatus ?? 'ACTIVE'}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+                >
+                  {withCurrentOption(personEmploymentStatusOptions, selectedPerson.employmentStatus).map((option) => (
+                    <option key={option} value={option}>
+                      {labelFromToken(option)}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
                 <span>Employee ID</span>
@@ -961,11 +1212,33 @@ export default function PeoplePage() {
             <div className="grid gap-3 md:grid-cols-4">
               <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
                 <span>Job Title</span>
-                <input name="workJobTitle" defaultValue={selectedProfile.workInfo?.jobTitle ?? ''} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                <select
+                  name="workJobTitle"
+                  defaultValue={selectedProfile.workInfo?.jobTitle ?? ''}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                >
+                  <option value="">Select job title</option>
+                  {withCurrentOption(workJobTitleOptions, selectedProfile.workInfo?.jobTitle).map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
                 <span>Department</span>
-                <input name="workDepartment" defaultValue={selectedProfile.workInfo?.department ?? ''} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                <select
+                  name="workDepartment"
+                  defaultValue={selectedProfile.workInfo?.department ?? ''}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                >
+                  <option value="">Select department</option>
+                  {withCurrentOption(workDepartmentOptions, selectedProfile.workInfo?.department).map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
                 <span>Manager Name</span>
@@ -989,7 +1262,18 @@ export default function PeoplePage() {
             <div className="grid gap-3 md:grid-cols-4">
               <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
                 <span>Pay Frequency</span>
-                <input name="compPayFrequency" defaultValue={selectedProfile.compensation?.payFrequency ?? ''} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900" />
+                <select
+                  name="compPayFrequency"
+                  defaultValue={selectedProfile.compensation?.payFrequency ?? ''}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+                >
+                  <option value="">Select value</option>
+                  {withCurrentOption(payFrequencyOptions, selectedProfile.compensation?.payFrequency).map((option) => (
+                    <option key={option} value={option}>
+                      {labelFromToken(option)}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
                 <span>Annual Salary</span>
@@ -1001,7 +1285,17 @@ export default function PeoplePage() {
               </label>
               <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
                 <span>Comp Currency</span>
-                <input name="compCurrency" defaultValue={selectedProfile.compensation?.currency ?? ''} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900" />
+                <select
+                  name="compCurrency"
+                  defaultValue={selectedProfile.compensation?.currency ?? 'USD'}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900"
+                >
+                  {withCurrentOption(currencyOptions, selectedProfile.compensation?.currency ?? 'USD').map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
               </label>
             </div>
 
@@ -1031,14 +1325,40 @@ export default function PeoplePage() {
             </div>
 
             <h3 className="text-sm font-semibold text-slate-900">Compliance and Notes</h3>
-            <div className="grid gap-3 md:grid-cols-4">
+            <div className="grid gap-3 md:grid-cols-5">
               <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
                 <span>Nationality</span>
                 <input name="nationality" defaultValue={selectedProfile.nationality ?? ''} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
               </label>
               <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+                <span>Marital Status</span>
+                <select
+                  name="maritalStatus"
+                  defaultValue={selectedProfile.maritalStatus ?? ''}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                >
+                  <option value="">Select value</option>
+                  {withCurrentOption(maritalStatusOptions, selectedProfile.maritalStatus).map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
                 <span>Citizenship Status</span>
-                <input name="citizenshipStatus" defaultValue={selectedProfile.citizenshipStatus ?? ''} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                <select
+                  name="citizenshipStatus"
+                  defaultValue={selectedProfile.citizenshipStatus ?? ''}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                >
+                  <option value="">Select value</option>
+                  {withCurrentOption(citizenshipStatusOptions, selectedProfile.citizenshipStatus).map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
                 <span>National ID Last 4</span>
@@ -1050,10 +1370,28 @@ export default function PeoplePage() {
               </label>
             </div>
 
-            <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-              <span>Skills (comma-separated)</span>
-              <input name="skills" defaultValue={selectedProfile.skills?.join(', ') ?? ''} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-            </label>
+            <div className="space-y-2">
+              <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+                <span>Skills</span>
+                <select
+                  name="skills"
+                  multiple
+                  defaultValue={selectedProfile.skills ?? []}
+                  className="min-h-36 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                >
+                  {[...new Set([...(selectedProfile.skills ?? []), ...skillOptions])].map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+                <span>Additional Skills (comma-separated)</span>
+                <input name="skillsCustom" placeholder="Optional custom skills" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+              </label>
+              <p className="text-xs text-slate-500">Tip: Hold Command on Mac to select multiple skills.</p>
+            </div>
 
             <label className="space-y-1 text-xs font-medium uppercase tracking-wide text-slate-500">
               <span>Notes</span>

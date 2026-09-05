@@ -107,6 +107,9 @@ type PeopleResponse = {
     primaryEmail: string | null;
     hrisProfile: unknown;
   }>;
+  page?: number;
+  pageSize?: number;
+  total?: number;
 };
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? '/api/v1';
@@ -121,7 +124,21 @@ function readString(record: Record<string, unknown>, key: string): string {
 }
 
 function readBoolean(record: Record<string, unknown>, key: string): boolean {
-  return record[key] === true;
+  const value = record[key];
+  if (value === true) {
+    return true;
+  }
+
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    return normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'on';
+  }
+
+  if (typeof value === 'number') {
+    return value === 1;
+  }
+
+  return false;
 }
 
 function readWorkInfo(hrisProfile: unknown): {
@@ -135,7 +152,10 @@ function readWorkInfo(hrisProfile: unknown): {
     jobTitle: readString(work, 'jobTitle'),
     department: readString(work, 'department'),
     companySignatory:
-      readBoolean(work, 'companySignatory') || readBoolean(profile, 'companySignatory'),
+      readBoolean(work, 'companySignatory') ||
+      readBoolean(profile, 'companySignatory') ||
+      readBoolean(work, 'isCompanySignatory') ||
+      readBoolean(profile, 'isCompanySignatory'),
   };
 }
 
@@ -193,6 +213,35 @@ export default function GrantDetailPage() {
     [people, detail?.grant.personId],
   );
 
+  async function loadAllPeople(): Promise<PeopleResponse['data']> {
+    const collected: PeopleResponse['data'] = [];
+    let page = 1;
+    const pageSize = 100;
+
+    while (page <= 20) {
+      const response = await fetch(`${apiBaseUrl}/people?page=${page}&pageSize=${pageSize}`, {
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        throw new Error(await readApiError(response, 'Unable to load people.'));
+      }
+
+      const payload = (await response.json()) as PeopleResponse;
+      collected.push(...payload.data);
+
+      const total = Number(payload.total ?? collected.length);
+      const effectivePageSize = Number(payload.pageSize ?? pageSize);
+      if (collected.length >= total || payload.data.length < effectivePageSize) {
+        break;
+      }
+
+      page += 1;
+    }
+
+    return collected;
+  }
+
   async function loadPageData() {
     if (!grantId) {
       return;
@@ -203,9 +252,9 @@ export default function GrantDetailPage() {
 
     try {
       const query = asOf ? `?asOf=${encodeURIComponent(new Date(`${asOf}T00:00:00.000Z`).toISOString())}` : '';
-      const [detailResp, peopleResp] = await Promise.all([
+      const [detailResp, peopleData] = await Promise.all([
         fetch(`${apiBaseUrl}/equity/grants/${grantId}${query}`, { credentials: 'include' }),
-        fetch(`${apiBaseUrl}/people?page=1&pageSize=100`, { credentials: 'include' }),
+        loadAllPeople(),
       ]);
 
       if (!detailResp.ok) {
@@ -213,18 +262,12 @@ export default function GrantDetailPage() {
         return;
       }
 
-      if (!peopleResp.ok) {
-        setError(await readApiError(peopleResp, 'Unable to load people.'));
-        return;
-      }
-
       const detailPayload = (await detailResp.json()) as GrantDetailResponse;
-      const peoplePayload = (await peopleResp.json()) as PeopleResponse;
 
       setDetail(detailPayload);
-      setPeople(peoplePayload.data);
-    } catch {
-      setError('Unable to load grant details.');
+      setPeople(peopleData);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to load grant details.');
     } finally {
       setLoading(false);
     }
@@ -708,7 +751,7 @@ export default function GrantDetailPage() {
                 </select>
                 {signatoryOptions.length === 0 ? (
                   <p className="mt-1 text-xs text-amber-700">
-                    No people are flagged as Company Signatory. Update the employee profile work info first.
+                    No eligible company signatories found. Flag at least one person as Company Signatory, and ensure it is not the grant recipient.
                   </p>
                 ) : null}
               </div>
