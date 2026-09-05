@@ -193,7 +193,22 @@ const skillOptions = [
 type PeopleModalView = 'createPerson' | 'createEngagement' | 'editProfile' | null;
 
 function asObject(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      return {};
+    }
+  }
+
+  return {};
 }
 
 function readString(record: Record<string, unknown>, key: string): string {
@@ -335,6 +350,18 @@ export default function PeoplePage() {
     }
 
     const raw = asObject(selectedPerson.hrisProfile);
+    const workInfoRaw = asObject(raw.workInfo);
+    const workProfileRaw = asObject(raw.workProfile);
+    const workRaw = asObject(raw.work);
+    const employmentRaw = asObject(raw.employment);
+    const workSource =
+      Object.keys(workInfoRaw).length > 0
+        ? workInfoRaw
+        : Object.keys(workProfileRaw).length > 0
+          ? workProfileRaw
+          : Object.keys(workRaw).length > 0
+            ? workRaw
+            : employmentRaw;
     return {
       legalMiddleName: readString(raw, 'legalMiddleName'),
       displayName: readString(raw, 'displayName'),
@@ -351,11 +378,19 @@ export default function PeoplePage() {
       compensation: asObject(raw.compensation),
       governmentIds: asObject(raw.governmentIds),
       workInfo: {
-        jobTitle: readString(asObject(raw.workInfo), 'jobTitle'),
-        department: readString(asObject(raw.workInfo), 'department'),
-        managerName: readString(asObject(raw.workInfo), 'managerName'),
-        workLocation: readString(asObject(raw.workInfo), 'workLocation'),
-        companySignatory: readBoolean(asObject(raw.workInfo), 'companySignatory'),
+        jobTitle: readString(workSource, 'jobTitle') || readString(raw, 'jobTitle'),
+        department: readString(workSource, 'department') || readString(raw, 'department'),
+        managerName: readString(workSource, 'managerName'),
+        workLocation: readString(workSource, 'workLocation'),
+        companySignatory:
+          readBoolean(workSource, 'companySignatory') ||
+          readBoolean(workSource, 'isCompanySignatory') ||
+          readBoolean(workSource, 'company_signatory') ||
+          readBoolean(employmentRaw, 'companySignatory') ||
+          readBoolean(employmentRaw, 'isCompanySignatory') ||
+          readBoolean(employmentRaw, 'company_signatory') ||
+          readBoolean(raw, 'companySignatory') ||
+          readBoolean(raw, 'isCompanySignatory'),
       },
       skills: readArray(raw, 'skills'),
       notes: readString(raw, 'notes'),

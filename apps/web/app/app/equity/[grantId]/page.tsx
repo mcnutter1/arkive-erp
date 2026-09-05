@@ -115,7 +115,22 @@ type PeopleResponse = {
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? '/api/v1';
 
 function asObject(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      return {};
+    }
+  }
+
+  return {};
 }
 
 function readString(record: Record<string, unknown>, key: string): string {
@@ -141,21 +156,48 @@ function readBoolean(record: Record<string, unknown>, key: string): boolean {
   return false;
 }
 
+function readBooleanFromKeys(record: Record<string, unknown>, keys: string[]): boolean {
+  for (const key of keys) {
+    if (readBoolean(record, key)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function readWorkInfo(hrisProfile: unknown): {
   jobTitle: string;
   department: string;
   companySignatory: boolean;
 } {
   const profile = asObject(hrisProfile);
-  const work = asObject(profile.workInfo);
+  const workInfo = asObject(profile.workInfo);
+  const workProfile = asObject(profile.workProfile);
+  const work =
+    Object.keys(workInfo).length > 0
+      ? workInfo
+      : Object.keys(workProfile).length > 0
+        ? workProfile
+        : asObject(profile.work);
+  const employment = asObject(profile.employment);
+
+  const signatoryKeys = ['companySignatory', 'isCompanySignatory', 'company_signatory'];
+
   return {
-    jobTitle: readString(work, 'jobTitle'),
-    department: readString(work, 'department'),
+    jobTitle:
+      readString(work, 'jobTitle') ||
+      readString(work, 'title') ||
+      readString(employment, 'jobTitle') ||
+      readString(profile, 'jobTitle'),
+    department:
+      readString(work, 'department') ||
+      readString(work, 'team') ||
+      readString(employment, 'department') ||
+      readString(profile, 'department'),
     companySignatory:
-      readBoolean(work, 'companySignatory') ||
-      readBoolean(profile, 'companySignatory') ||
-      readBoolean(work, 'isCompanySignatory') ||
-      readBoolean(profile, 'isCompanySignatory'),
+      readBooleanFromKeys(work, signatoryKeys) ||
+      readBooleanFromKeys(employment, signatoryKeys) ||
+      readBooleanFromKeys(profile, signatoryKeys),
   };
 }
 
@@ -202,15 +244,19 @@ export default function GrantDetailPage() {
     return `${detail.grant.person.legalFirstName} ${detail.grant.person.legalLastName}`;
   }, [detail]);
 
+  const flaggedSignatories = useMemo(
+    () => people.filter((person) => readWorkInfo(person.hrisProfile).companySignatory),
+    [people],
+  );
+
   const signatoryOptions = useMemo(
-    () =>
-      people.filter((person) => {
-        if (person.id === detail?.grant.personId) {
-          return false;
-        }
-        return readWorkInfo(person.hrisProfile).companySignatory;
-      }),
-    [people, detail?.grant.personId],
+    () => flaggedSignatories.filter((person) => person.id !== detail?.grant.personId),
+    [flaggedSignatories, detail?.grant.personId],
+  );
+
+  const recipientIsFlaggedSignatory = useMemo(
+    () => flaggedSignatories.some((person) => person.id === detail?.grant.personId),
+    [flaggedSignatories, detail?.grant.personId],
   );
 
   async function loadAllPeople(): Promise<PeopleResponse['data']> {
@@ -751,7 +797,11 @@ export default function GrantDetailPage() {
                 </select>
                 {signatoryOptions.length === 0 ? (
                   <p className="mt-1 text-xs text-amber-700">
-                    No eligible company signatories found. Flag at least one person as Company Signatory, and ensure it is not the grant recipient.
+                    {flaggedSignatories.length === 0
+                      ? 'No people are currently marked as Company Signatory in employee profile.'
+                      : recipientIsFlaggedSignatory
+                        ? 'A company signatory exists, but it is the grant recipient. Flag a different person as Company Signatory to continue.'
+                        : 'No eligible company signatories found. Flag at least one person as Company Signatory, and ensure it is not the grant recipient.'}
                   </p>
                 ) : null}
               </div>

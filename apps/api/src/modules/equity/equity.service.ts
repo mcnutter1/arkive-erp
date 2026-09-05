@@ -75,9 +75,21 @@ export class EquityService {
   ) {}
 
   private parseSettingObject(value: unknown): Record<string, unknown> {
-    if (typeof value === 'object' && value) {
+    if (typeof value === 'object' && value && !Array.isArray(value)) {
       return value as Record<string, unknown>;
     }
+
+    if (typeof value === 'string') {
+      try {
+        const parsed = JSON.parse(value) as unknown;
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          return parsed as Record<string, unknown>;
+        }
+      } catch {
+        return {};
+      }
+    }
+
     return {};
   }
 
@@ -116,12 +128,42 @@ export class EquityService {
 
   private readWorkInfoFromProfile(hrisProfile: Prisma.JsonValue | null | undefined): PersonWorkInfo {
     const profile = this.parseSettingObject(hrisProfile);
-    const workInfo = this.parseSettingObject(profile.workInfo);
+    const workInfoPrimary = this.parseSettingObject(profile.workInfo);
+    const workInfoFallback = this.parseSettingObject(profile.workProfile);
+    const workContainer = this.parseSettingObject(profile.work);
+    const employmentContainer = this.parseSettingObject(profile.employment);
+    const workInfo =
+      Object.keys(workInfoPrimary).length > 0
+        ? workInfoPrimary
+        : Object.keys(workInfoFallback).length > 0
+          ? workInfoFallback
+          : Object.keys(workContainer).length > 0
+            ? workContainer
+            : employmentContainer;
 
     return {
-      jobTitle: this.readString(workInfo.jobTitle) ?? this.readString(profile.jobTitle),
-      department: this.readString(workInfo.department) ?? this.readString(profile.department),
-      companySignatory: this.toBoolean(workInfo.companySignatory ?? profile.companySignatory),
+      jobTitle:
+        this.readString(workInfo.jobTitle) ??
+        this.readString(workInfo.title) ??
+        this.readString(employmentContainer.jobTitle) ??
+        this.readString(profile.jobTitle) ??
+        this.readString(profile.title),
+      department:
+        this.readString(workInfo.department) ??
+        this.readString(workInfo.team) ??
+        this.readString(employmentContainer.department) ??
+        this.readString(profile.department),
+      companySignatory: this.toBoolean(
+        workInfo.companySignatory ??
+          workInfo.isCompanySignatory ??
+          workInfo.company_signatory ??
+          employmentContainer.companySignatory ??
+          employmentContainer.isCompanySignatory ??
+          employmentContainer.company_signatory ??
+          profile.companySignatory ??
+          profile.isCompanySignatory ??
+          profile.company_signatory,
+      ),
     };
   }
 
