@@ -462,7 +462,7 @@ export default function GrantDetailPage() {
         return;
       }
 
-      setNotice('Grant letter document and e-sign request created successfully.');
+      setNotice('Grant letter document and e-sign request created. Signers can complete signatures from the Portal inbox.');
     } catch {
       setError('Unable to create e-sign package for grant letter.');
     } finally {

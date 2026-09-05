@@ -1,7 +1,7 @@
 import { PutObjectCommand, GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { Injectable } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 @Injectable()
 export class StorageService {
@@ -39,5 +39,28 @@ export class StorageService {
       Key: key,
     });
     return getSignedUrl(this.client, command, { expiresIn: 120 });
+  }
+
+  async uploadObject(
+    orgId: string,
+    mimeType: string,
+    body: Uint8Array,
+    subFolder = 'generated',
+  ): Promise<{ key: string; sha256: string; byteSize: number }> {
+    const key = `${orgId}/${new Date().toISOString().slice(0, 10)}/${subFolder}/${randomUUID()}`;
+    const command = new PutObjectCommand({
+      Bucket: this.bucket,
+      Key: key,
+      ContentType: mimeType,
+      Body: body,
+    });
+
+    await this.client.send(command);
+
+    return {
+      key,
+      sha256: createHash('sha256').update(body).digest('hex'),
+      byteSize: body.byteLength,
+    };
   }
 }
